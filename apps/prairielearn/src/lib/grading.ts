@@ -13,6 +13,7 @@ import { computeNextAllowedGradingTimeMs } from '../models/instance-question.js'
 import { lockVariant } from '../models/variant.js';
 import * as questionServers from '../question-servers/index.js';
 
+import { updateAssessmentInstancesScorePercPending } from './assessment-grading.js';
 import { ensureChunksForCourseAsync } from './chunks.js';
 import {
   AssessmentQuestionSchema,
@@ -50,6 +51,10 @@ const VariantForSubmissionSchema = VariantSchema.extend({
   max_manual_points: z.number().nullable(),
   instance_question_open: z.boolean().nullable(),
   assessment_instance_open: z.boolean().nullable(),
+});
+
+const UpdatedInstanceQuestionPostSubmissionSchema = InstanceQuestionSchema.extend({
+  newly_requires_manual_grading: z.boolean(),
 });
 
 type SubmissionDataForSaving = Pick<Submission, 'variant_id' | 'auth_user_id'> &
@@ -156,7 +161,7 @@ async function insertSubmission({
     await updateCourseInstanceUsagesForSubmission({ submission_id, user_id });
 
     if (variant.instance_question_id != null) {
-      const instanceQuestion = await sqldb.queryRow(
+      const updatedInstanceQuestion = await sqldb.queryRow(
         sql.update_instance_question_post_submission,
         {
           instance_question_id: variant.instance_question_id,
@@ -165,9 +170,16 @@ async function insertSubmission({
           status: gradable ? 'saved' : 'invalid',
           requires_manual_grading: (variant.max_manual_points ?? 0) > 0,
         },
-        InstanceQuestionSchema,
+        UpdatedInstanceQuestionPostSubmissionSchema,
       );
-      await updateInstanceQuestionStats({ instanceQuestion });
+      await updateInstanceQuestionStats({ instanceQuestion: updatedInstanceQuestion });
+
+      if (
+        variant.assessment_instance_id != null &&
+        updatedInstanceQuestion.newly_requires_manual_grading
+      ) {
+        await updateAssessmentInstancesScorePercPending([variant.assessment_instance_id]);
+      }
     }
 
     return { submission_id, variant };
