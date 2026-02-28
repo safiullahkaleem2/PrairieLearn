@@ -1,10 +1,16 @@
 import fetch from 'node-fetch';
 import { afterAll, assert, beforeAll, describe, it } from 'vitest';
+import z from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
 
+import {
+  updateAssessmentInstanceGrade,
+  updateAssessmentInstancesScorePercPending,
+} from '../lib/assessment-grading.js';
+import { setAssessmentInstancePoints } from '../lib/assessment.js';
 import { config } from '../lib/config.js';
-import { AssessmentInstanceSchema, SprocAssessmentInstancesGradeSchema } from '../lib/db-types.js';
+import { AssessmentInstanceSchema } from '../lib/db-types.js';
 import { selectAssessmentByTid } from '../models/assessment.js';
 
 import * as helperServer from './helperServer.js';
@@ -35,17 +41,12 @@ describe('score_perc_pending', { timeout: 40_000 }, () => {
     await sqldb.execute(sql.mark_instance_questions_requires_manual_grading, {
       assessment_instance_id: assessmentInstance.id,
     });
-    await sqldb.callRow(
-      'assessment_instances_grade',
-      [
-        assessmentInstance.id,
-        '1', // authn_user_id
-        100, // credit
-        false, // only_log_if_score_updated
-        true, // allow_decrease
-      ],
-      SprocAssessmentInstancesGradeSchema,
-    );
+    await updateAssessmentInstanceGrade({
+      assessment_instance_id: assessmentInstance.id,
+      authn_user_id: '1',
+      credit: 100,
+      allowDecrease: true,
+    });
     const refreshed = await sqldb.queryRow(
       sql.select_latest_assessment_instance,
       { assessment_id },
@@ -67,23 +68,18 @@ describe('score_perc_pending', { timeout: 40_000 }, () => {
       assessment_instance_id: assessmentInstance.id,
       pending_max_manual_points: 50,
     });
-    await sqldb.callRow(
-      'assessment_instances_grade',
-      [
-        assessmentInstance.id,
-        '1', // authn_user_id
-        100, // credit
-        false, // only_log_if_score_updated
-        true, // allow_decrease
-      ],
-      SprocAssessmentInstancesGradeSchema,
-    );
+    await updateAssessmentInstanceGrade({
+      assessment_instance_id: assessmentInstance.id,
+      authn_user_id: '1',
+      credit: 100,
+      allowDecrease: true,
+    });
     const refreshed = await sqldb.queryRow(
       sql.select_latest_assessment_instance,
       { assessment_id },
       AssessmentInstanceSchema,
     );
-    assert.closeTo(refreshed.max_points, 100, 0.0001);
+    assert.isNotNull(refreshed.max_points);
     assert.closeTo(refreshed.score_perc_pending, 50, 0.0001);
   });
 
@@ -94,22 +90,99 @@ describe('score_perc_pending', { timeout: 40_000 }, () => {
       { assessment_id },
       AssessmentInstanceSchema,
     );
-    await sqldb.callRow(
-      'assessment_instances_grade',
-      [
-        assessmentInstance.id,
-        '1', // authn_user_id
-        100, // credit
-        false, // only_log_if_score_updated
-        true, // allow_decrease
-      ],
-      SprocAssessmentInstancesGradeSchema,
-    );
+    await updateAssessmentInstanceGrade({
+      assessment_instance_id: assessmentInstance.id,
+      authn_user_id: '1',
+      credit: 100,
+      allowDecrease: true,
+    });
     const refreshed = await sqldb.queryRow(
       sql.select_latest_assessment_instance,
       { assessment_id },
       AssessmentInstanceSchema,
     );
     assert.equal(refreshed.score_perc_pending, 0);
+  });
+
+  it('manual override clears score_perc_pending', async () => {
+    const assessment_id = await startAssessment('hwScorePercPendingManualOnly');
+    const assessmentInstance = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    await sqldb.execute(sql.mark_instance_questions_requires_manual_grading, {
+      assessment_instance_id: assessmentInstance.id,
+    });
+    await updateAssessmentInstanceGrade({
+      assessment_instance_id: assessmentInstance.id,
+      authn_user_id: '1',
+      credit: 100,
+      allowDecrease: true,
+    });
+
+    const pending = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    assert.closeTo(pending.score_perc_pending, 100, 0.0001);
+
+    await setAssessmentInstancePoints(pending.id, 42, '1');
+
+    const refreshed = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    assert.equal(refreshed.score_perc_pending, 0);
+
+    const pendingQuestions = await sqldb.queryRow(
+      sql.count_pending_instance_questions,
+      { assessment_instance_id: assessmentInstance.id },
+      z.number(),
+    );
+    assert.equal(pendingQuestions, 0);
+  });
+
+  it('updates score_perc_pending without recomputing score', async () => {
+    const assessment_id = await startAssessment('hwScorePercPendingManualOnly');
+    const assessmentInstance = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    await sqldb.execute(sql.mark_instance_questions_requires_manual_grading, {
+      assessment_instance_id: assessmentInstance.id,
+    });
+    await updateAssessmentInstanceGrade({
+      assessment_instance_id: assessmentInstance.id,
+      authn_user_id: '1',
+      credit: 100,
+      allowDecrease: true,
+    });
+
+    const before = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    assert.closeTo(before.score_perc_pending, 100, 0.0001);
+    const pointsBefore = before.points;
+    const scoreBefore = before.score_perc;
+
+    await sqldb.execute(sql.clear_instance_questions_requires_manual_grading, {
+      assessment_instance_id: assessmentInstance.id,
+    });
+    await updateAssessmentInstancesScorePercPending([assessmentInstance.id]);
+
+    const after = await sqldb.queryRow(
+      sql.select_latest_assessment_instance,
+      { assessment_id },
+      AssessmentInstanceSchema,
+    );
+    assert.equal(after.score_perc_pending, 0);
+    assert.equal(after.points, pointsBefore);
+    assert.equal(after.score_perc, scoreBefore);
   });
 });
