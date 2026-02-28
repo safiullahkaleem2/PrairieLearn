@@ -410,8 +410,8 @@ WITH
     RETURNING
       iq.assessment_instance_id
   )
-SELECT
-  DISTINCT uiq.assessment_instance_id
+SELECT DISTINCT
+  uiq.assessment_instance_id
 FROM
   updated_instance_questions AS uiq;
 
