@@ -1,9 +1,4 @@
-import type { StaffAssessmentQuestionRow } from '../lib/assessment-question.js';
-import type {
-  StaffAlternativeGroup,
-  StaffAssessmentQuestion,
-} from '../lib/client/safe-db-types.js';
-import type { AlternativeGroup, AssessmentQuestion } from '../lib/db-types.js';
+import type { StaffAssessmentQuestionRow } from '../lib/assessment-question.shared.js';
 
 export function AssessmentQuestionHeaders({
   question,
@@ -17,18 +12,26 @@ export function AssessmentQuestionHeaders({
       {question.start_new_zone ? (
         <tr>
           <th colSpan={nTableCols}>
-            Zone {question.zone.number}. {question.zone.title}{' '}
-            {question.zone.number_choose == null
-              ? '(Choose all questions)'
-              : question.zone.number_choose === 1
-                ? '(Choose 1 question)'
-                : `(Choose ${question.zone.number_choose} questions)`}
-            {question.zone.max_points != null
-              ? ` (maximum ${question.zone.max_points} points)`
-              : ''}
-            {question.zone.best_questions != null
-              ? ` (best ${question.zone.best_questions} questions)`
-              : ''}
+            <div className="d-flex align-items-center">
+              Zone {question.zone.number}. {question.zone.title}{' '}
+              {question.zone.number_choose == null
+                ? '(Choose all questions)'
+                : question.zone.number_choose === 1
+                  ? '(Choose 1 question)'
+                  : `(Choose ${question.zone.number_choose} questions)`}
+              {question.zone.max_points != null
+                ? ` (maximum ${question.zone.max_points} points)`
+                : ''}
+              {question.zone.best_questions != null
+                ? ` (best ${question.zone.best_questions} questions)`
+                : ''}
+              {question.zone.lockpoint ? (
+                <span className="badge text-bg-warning ms-2">
+                  <i className="bi bi-lock-fill me-1" aria-hidden="true" />
+                  Lockpoint
+                </span>
+              ) : null}
+            </div>
           </th>
         </tr>
       ) : (
@@ -52,20 +55,22 @@ export function AssessmentQuestionHeaders({
   );
 }
 
+/**
+ * Renders the question number badge for public assessment questions.
+ */
 export function AssessmentQuestionNumber({
-  alternativeGroup,
   alternativeGroupSize,
-  assessmentQuestion,
+  alternativeGroupNumber,
+  numberInAlternativeGroup,
 }: {
-  alternativeGroup: AlternativeGroup | StaffAlternativeGroup;
   alternativeGroupSize: number;
-  assessmentQuestion: AssessmentQuestion | StaffAssessmentQuestion;
+  alternativeGroupNumber: number;
+  numberInAlternativeGroup: number | null;
 }) {
-  return alternativeGroupSize === 1 ? (
-    `${alternativeGroup.number}. `
-  ) : (
-    <span className="ms-3">
-      {alternativeGroup.number}.{assessmentQuestion.number_in_alternative_group}.{' '}
-    </span>
-  );
+  const numberText =
+    alternativeGroupSize === 1
+      ? `${alternativeGroupNumber}.`
+      : `${alternativeGroupNumber}.${numberInAlternativeGroup}.`;
+
+  return <span className="badge color-gray1 me-2">{numberText} </span>;
 }

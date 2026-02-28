@@ -347,7 +347,7 @@ function GradebookTable({
                         assessmentInstanceId={assessmentData.assessment_instance_id}
                         courseInstanceId={courseInstanceId}
                         currentScore={score}
-                        otherUsers={assessmentData.uid_other_users_team}
+                        otherUsers={assessmentData.uid_other_users_group}
                         csrfToken={csrfToken}
                       />
                     </span>
@@ -397,7 +397,7 @@ function GradebookTable({
   const filters = useMemo(() => {
     const assessmentFilters: Record<
       string,
-      (props: { header: Header<GradebookRow, unknown> }) => React.JSX.Element
+      (props: { header: Header<GradebookRow, unknown> }) => React.ReactNode
     > = {};
 
     courseAssessments.forEach((assessment) => {

@@ -1,7 +1,7 @@
 -- BLOCK get_requests
 SELECT
-  to_json(r.*) AS course_request,
-  to_json(u.*) AS approved_by_user
+  to_jsonb(r.*) AS course_request,
+  to_jsonb(u.*) AS approved_by_user
 FROM
   course_requests AS r
   LEFT JOIN users AS u ON u.id = r.approved_by
@@ -39,36 +39,6 @@ WHERE
   )
 LIMIT
   1;
-
--- BLOCK insert_course_request
-INSERT INTO
-  course_requests (
-    short_name,
-    title,
-    user_id,
-    github_user,
-    first_name,
-    last_name,
-    work_email,
-    institution,
-    referral_source,
-    approved_status
-  )
-VALUES
-  (
-    $short_name,
-    $title,
-    $user_id,
-    $github_user,
-    $first_name,
-    $last_name,
-    $work_email,
-    $institution,
-    $referral_source,
-    'pending'
-  )
-RETURNING
-  course_requests.id AS course_request_id;
 
 -- BLOCK can_auto_create_course
 SELECT

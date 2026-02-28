@@ -3,24 +3,32 @@ import asyncHandler from 'express-async-handler';
 
 import { HttpStatusError } from '@prairielearn/error';
 import { loadSqlEquiv, queryRow, queryRows } from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
 
-import * as assessment from '../../lib/assessment.js';
+import {
+  crossLockpoint,
+  gradeAssessmentInstance,
+  renderText,
+  updateAssessmentInstance,
+} from '../../lib/assessment.js';
+import { canDeleteAssessmentInstance } from '../../lib/assessment.shared.js';
 import { AssessmentInstanceSchema, type File } from '../../lib/db-types.js';
 import { deleteFile, uploadFile } from '../../lib/file-store.js';
+import {
+  canUserAssignGroupRoles,
+  getGroupConfig,
+  getGroupInfo,
+  getQuestionGroupPermissions,
+  leaveGroup,
+  updateGroupRoles,
+} from '../../lib/groups.js';
 import { idsEqual } from '../../lib/id.js';
 import { type ResLocalsForPage, typedAsyncHandler } from '../../lib/res-locals.js';
-import {
-  canUserAssignTeamRoles,
-  getQuestionTeamPermissions,
-  getTeamConfig,
-  getTeamInfo,
-  leaveTeam,
-  updateTeamRoles,
-} from '../../lib/teams.js';
 import clientFingerprint from '../../middlewares/clientFingerprint.js';
 import logPageView from '../../middlewares/logPageView.js';
 import selectAndAuthzAssessmentInstance from '../../middlewares/selectAndAuthzAssessmentInstance.js';
 import studentAssessmentAccess from '../../middlewares/studentAssessmentAccess.js';
+import { computeNextAllowedGradingTimeMs } from '../../models/instance-question.js';
 import { selectVariantsByInstanceQuestion } from '../../models/variant.js';
 
 import {
@@ -35,7 +43,7 @@ router.use(selectAndAuthzAssessmentInstance);
 router.use(studentAssessmentAccess);
 
 async function ensureUpToDate(locals: ResLocalsForPage<'assessment-instance'>) {
-  const updated = await assessment.updateAssessmentInstance(
+  const updated = await updateAssessmentInstance(
     locals.assessment_instance.id,
     locals.authn_user.id,
   );
@@ -135,7 +143,7 @@ router.post(
     }
     if (
       !res.locals.authz_result.authorized_edit &&
-      ['attach_file', 'attach_text', 'delete_file', 'timeLimitFinish', 'leave_team'].includes(
+      ['attach_file', 'attach_text', 'delete_file', 'timeLimitFinish', 'leave_group'].includes(
         req.body.__action,
       )
     ) {
@@ -160,7 +168,7 @@ router.post(
       }
 
       const isFinishing = ['finish', 'timeLimitFinish'].includes(req.body.__action);
-      await assessment.gradeAssessmentInstance({
+      await gradeAssessmentInstance({
         assessment_instance_id: res.locals.assessment_instance.id,
         user_id: res.locals.user.id,
         authn_user_id: res.locals.authn_user.id,
@@ -176,16 +184,33 @@ router.post(
       } else {
         res.redirect(req.originalUrl);
       }
-    } else if (req.body.__action === 'leave_team') {
+    } else if (req.body.__action === 'cross_lockpoint') {
+      if (!res.locals.authz_result.authorized_edit) {
+        throw new HttpStatusError(403, 'Action is only permitted to the assessment owner');
+      }
+      if (!res.locals.assessment_instance.open || !res.locals.authz_result.active) {
+        throw new HttpStatusError(
+          403,
+          'This assessment is not accepting submissions at this time.',
+        );
+      }
+      const zoneId = IdSchema.parse(req.body.zone_id);
+      await crossLockpoint({
+        assessmentInstance: res.locals.assessment_instance,
+        zoneId,
+        authnUser: res.locals.authn_user,
+      });
+      res.redirect(req.originalUrl);
+    } else if (req.body.__action === 'leave_group') {
       if (!res.locals.authz_result.active) {
         throw new HttpStatusError(400, 'Unauthorized request.');
       }
-      await leaveTeam(res.locals.assessment.id, res.locals.user.id, res.locals.authn_user.id);
+      await leaveGroup(res.locals.assessment.id, res.locals.user.id, res.locals.authn_user.id);
       res.redirect(
         `/pl/course_instance/${res.locals.course_instance.id}/assessment/${res.locals.assessment.id}`,
       );
-    } else if (req.body.__action === 'update_team_roles') {
-      await updateTeamRoles(
+    } else if (req.body.__action === 'update_group_roles') {
+      await updateGroupRoles(
         req.body,
         res.locals.assessment.id,
         res.locals.assessment_instance.team_id,
@@ -233,6 +258,11 @@ router.get(
       instance_question.previous_variants = allPreviousVariants.filter((variant) =>
         idsEqual(variant.instance_question_id, instance_question.id),
       );
+      if (instance_question.grade_rate_minutes) {
+        instance_question.allowGradeLeftMs = await computeNextAllowedGradingTimeMs({
+          instanceQuestionId: instance_question.id,
+        });
+      }
     }
 
     res.locals.has_manual_grading_question = instance_question_rows.some(
@@ -241,10 +271,7 @@ router.get(
     res.locals.has_auto_grading_question = instance_question_rows.some(
       (q) => q.max_auto_points || q.auto_points || !q.max_points,
     );
-    const assessment_text_templated = assessment.renderText(
-      res.locals.assessment,
-      res.locals.urlPrefix,
-    );
+    const assessment_text_templated = renderText(res.locals.assessment, res.locals.urlPrefix);
     res.locals.assessment_text_templated = assessment_text_templated;
 
     const showTimeLimitExpiredModal = req.query.timeLimitExpired === 'true';
@@ -254,27 +281,27 @@ router.get(
         StudentAssessmentInstance({
           instance_question_rows,
           showTimeLimitExpiredModal,
-          userCanDeleteAssessmentInstance: assessment.canDeleteAssessmentInstance(res.locals),
+          userCanDeleteAssessmentInstance: canDeleteAssessmentInstance(res.locals),
           resLocals: res.locals,
         }),
       );
       return;
     }
 
-    // Get the team config info
-    const teamConfig = await getTeamConfig(res.locals.assessment.id);
-    const teamInfo = await getTeamInfo(res.locals.assessment_instance.team_id!, teamConfig);
+    // Get the group config info
+    const groupConfig = await getGroupConfig(res.locals.assessment.id);
+    const groupInfo = await getGroupInfo(res.locals.assessment_instance.team_id!, groupConfig);
     const userCanAssignRoles =
-      teamConfig.has_roles &&
-      (canUserAssignTeamRoles(teamInfo, res.locals.user.id) ||
+      groupConfig.has_roles &&
+      (canUserAssignGroupRoles(groupInfo, res.locals.user.id) ||
         res.locals.authz_data.has_course_instance_permission_edit);
 
-    if (teamConfig.has_roles) {
+    if (groupConfig.has_roles) {
       // Get the role permissions. If the authorized user has course instance
       // permission, then role restrictions don't apply.
       if (!res.locals.authz_data.has_course_instance_permission_view) {
         for (const question of instance_question_rows) {
-          question.team_role_permissions = await getQuestionTeamPermissions(
+          question.group_role_permissions = await getQuestionGroupPermissions(
             question.id,
             res.locals.assessment_instance.team_id!,
             res.locals.authz_data.user.id,
@@ -287,10 +314,10 @@ router.get(
       StudentAssessmentInstance({
         instance_question_rows,
         showTimeLimitExpiredModal,
-        teamConfig,
-        teamInfo,
+        groupConfig,
+        groupInfo,
         userCanAssignRoles,
-        userCanDeleteAssessmentInstance: assessment.canDeleteAssessmentInstance(res.locals),
+        userCanDeleteAssessmentInstance: canDeleteAssessmentInstance(res.locals),
         resLocals: res.locals,
       }),
     );

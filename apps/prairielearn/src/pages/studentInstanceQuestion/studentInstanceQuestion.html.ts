@@ -15,8 +15,8 @@ import { QuestionScorePanel } from '../../components/QuestionScore.js';
 import { assetPath, compiledScriptTag, nodeModulesAssetPath } from '../../lib/assets.js';
 import { type CopyTarget } from '../../lib/copy-content.js';
 import type { User } from '../../lib/db-types.js';
+import { getRoleNamesForUser } from '../../lib/groups.js';
 import type { UntypedResLocals } from '../../lib/res-locals.types.js';
-import { getRoleNamesForUser } from '../../lib/teams.js';
 
 export function StudentInstanceQuestion({
   resLocals,
@@ -89,6 +89,14 @@ export function StudentInstanceQuestion({
       ${userCanDeleteAssessmentInstance ? RegenerateInstanceAlert() : ''}
       <div class="row">
         <div class="col-lg-9 col-sm-12">
+          ${resLocals.instance_question_info.question_access_mode === 'read_only_lockpoint'
+            ? html`
+                <div class="alert alert-warning">
+                  This question is read-only because you advanced past a lockpoint. You can review
+                  your previous submissions but cannot make new ones.
+                </div>
+              `
+            : ''}
           ${resLocals.variant == null
             ? html`
                 <div class="card mb-4">
@@ -171,18 +179,19 @@ export function StudentInstanceQuestion({
             authz_result: resLocals.authz_result,
             csrfToken: resLocals.__csrf_token,
             urlPrefix: resLocals.urlPrefix,
+            allowGradeLeftMs: resLocals.allowGradeLeftMs,
           })}
           ${QuestionNavSideGroup({
             urlPrefix: resLocals.urlPrefix,
             prevInstanceQuestionId: resLocals.instance_question_info.prev_instance_question?.id,
             nextInstanceQuestionId: resLocals.instance_question_info.next_instance_question?.id,
-            sequenceLocked:
-              resLocals.instance_question_info.next_instance_question?.sequence_locked,
-            prevTeamRolePermissions: resLocals.prev_instance_question_role_permissions,
-            nextTeamRolePermissions: resLocals.next_instance_question_role_permissions,
+            nextQuestionAccessMode:
+              resLocals.instance_question_info.next_instance_question?.question_access_mode,
+            prevGroupRolePermissions: resLocals.prev_instance_question_role_permissions,
+            nextGroupRolePermissions: resLocals.next_instance_question_role_permissions,
             advanceScorePerc: resLocals.instance_question_info.advance_score_perc,
-            userTeamRoles: resLocals.team_info
-              ? getRoleNamesForUser(resLocals.team_info, resLocals.user).join(', ')
+            userGroupRoles: resLocals.group_info
+              ? getRoleNamesForUser(resLocals.group_info, resLocals.user).join(', ')
               : null,
           })}
           ${resLocals.assessment.allow_personal_notes
@@ -206,8 +215,8 @@ export function StudentInstanceQuestion({
             lastGrader,
             question: resLocals.question,
             variant: resLocals.variant,
-            instance_team: resLocals.instance_team,
-            instance_team_uid_list: resLocals.instance_team_uid_list,
+            instance_group: resLocals.instance_group,
+            instance_group_uid_list: resLocals.instance_group_uid_list,
             instance_user: resLocals.instance_user,
             authz_data: resLocals.authz_data,
             question_is_shared: resLocals.question_is_shared,

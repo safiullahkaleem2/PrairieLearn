@@ -4,6 +4,23 @@ import * as parse5 from 'parse5';
 type DocumentFragment = parse5.DefaultTreeAdapterMap['documentFragment'];
 type ChildNode = parse5.DefaultTreeAdapterMap['childNode'];
 
+const PANEL_ELEMENTS = new Set(['pl-question-panel', 'pl-answer-panel', 'pl-submission-panel']);
+
+// Note: all elements here are purely input-oriented. If a dual-purpose element is
+// added (e.g. `pl-drawing`, which can be either input or display depending on its
+// attributes), the nesting validation in `dfsCheckParseTree` may need to be made
+// attribute-aware for that element rather than adding it here unconditionally.
+const INPUT_ELEMENTS = new Set([
+  'pl-multiple-choice',
+  'pl-checkbox',
+  'pl-integer-input',
+  'pl-number-input',
+  'pl-string-input',
+  'pl-symbolic-input',
+]);
+
+export const SUPPORTED_ELEMENTS = new Set([...PANEL_ELEMENTS, ...INPUT_ELEMENTS]);
+
 const BOOLEAN_TRUE_VALUES = ['true', 't', '1', 'True', 'T', 'TRUE', 'yes', 'y', 'Yes', 'Y', 'YES'];
 const BOOLEAN_FALSE_VALUES = ['false', 'f', '0', 'False', 'F', 'FALSE', 'no', 'n', 'No', 'N', 'NO'];
 const BOOLEAN_VALUES = [...BOOLEAN_TRUE_VALUES, ...BOOLEAN_FALSE_VALUES];
@@ -74,6 +91,18 @@ interface ValidationResult {
   mandatoryPythonCorrectAnswers?: Set<string>;
 }
 
+interface HTMLValidationResult {
+  /** Hard errors that must be fixed before saving. */
+  errors: string[];
+  /**
+   * Warnings about likely issues. Unlike errors, warnings do not block
+   * saving — they are included in the response so the LLM is informed,
+   * but the question can still be saved. Callers may choose to promote
+   * warnings to errors based on context (e.g. when creating a new question).
+   */
+  warnings: string[];
+}
+
 /**
  * Checks that the required attribute is an int (or mustache template) or adds an error to the provided list.
  * @param tag The name of the tag being checked.
@@ -82,7 +111,7 @@ interface ValidationResult {
  * @param errors The list of errors to add to.
  */
 function assertInt(tag: string, key: string, val: string, errors: string[]) {
-  if (!(/^\d+$/.test(val) || mustacheTemplateRegex.test(val))) {
+  if (!(/^-?\d+$/.test(val) || mustacheTemplateRegex.test(val))) {
     errors.push(
       `${tag}: value for attribute ${key} must be an integer, but value provided is "${val}"`,
     );
@@ -97,7 +126,7 @@ function assertInt(tag: string, key: string, val: string, errors: string[]) {
  * @param errors The list of errors to add to.
  */
 function assertFloat(tag: string, key: string, val: string, errors: string[]) {
-  if (!(/^(\d+)\.?(\d*)(e-\d+)?$/.test(val) || mustacheTemplateRegex.test(val))) {
+  if (!(/^-?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(val) || mustacheTemplateRegex.test(val))) {
     errors.push(
       `${tag}: value for attribute ${key} must be an floating-point number, but value provided is "${val}"`,
     );
@@ -151,6 +180,8 @@ function isBooleanTrue(val: string): boolean {
  */
 function checkTag(ast: DocumentFragment | ChildNode): ValidationResult {
   if ('tagName' in ast) {
+    // The elements supported here should be kept in sync with those in
+    // `context-parsers/documentation.ts`.
     switch (ast.tagName) {
       case 'pl-multiple-choice':
         return checkMultipleChoice(ast);
@@ -165,14 +196,17 @@ function checkTag(ast: DocumentFragment | ChildNode): ValidationResult {
       case 'pl-symbolic-input':
         return checkSymbolicInput(ast);
       case 'pl-question-panel':
+      case 'pl-answer-panel':
+      case 'pl-submission-panel':
         return { errors: [] };
       case 'pl-answer':
         return { errors: [] }; // covered elsewhere
       default:
         if (ast.tagName.startsWith('pl-')) {
+          const formattedSupportedElements = Array.from(SUPPORTED_ELEMENTS).join(', ');
           return {
             errors: [
-              `${ast.tagName} is not a valid tag. Please use tags from the following: \`pl-question-panel\`, \`pl-multiple-choice\`, \`pl-checkbox\`, \`pl-integer-input\`, \`pl-number-input\`,\`pl-string-input\`, \`pl-symbolic-input\``,
+              `${ast.tagName} is not a valid tag. You must use only the following tags: ${formattedSupportedElements}`,
             ],
           };
         }
@@ -226,7 +260,16 @@ function checkMultipleChoice(ast: DocumentFragment | ChildNode): ValidationResul
           );
           break;
         case 'hide-letter-keys':
+        case 'hide-score-badge':
+        case 'fixed-order':
+        case 'inline':
           assertBool('pl-multiple-choice', key, val, errors);
+          break;
+        case 'placeholder':
+        case 'aria-label':
+        case 'external-json':
+        case 'external-json-correct-key':
+        case 'external-json-incorrect-key':
           break;
         case 'all-of-the-above':
           assertInChoices('pl-multiple-choice', key, val, optionsOfTheAbove, errors);
@@ -312,7 +355,6 @@ function checkIntegerInput(ast: DocumentFragment | ChildNode): ValidationResult 
           answersName = val;
           break;
         case 'weight':
-        case 'blank-answer':
         case 'size':
           assertInt('pl-integer-input', key, val, errors);
           break;
@@ -326,6 +368,7 @@ function checkIntegerInput(ast: DocumentFragment | ChildNode): ValidationResult 
           }
           break;
         case 'label':
+        case 'aria-label':
         case 'suffix':
         case 'placeholder':
           break;
@@ -405,6 +448,7 @@ function checkSymbolicInput(ast: DocumentFragment | ChildNode): ValidationResult
         case 'placeholder':
         case 'custom-functions':
         case 'suffix':
+        case 'additional-simplifications':
           break;
         case 'display':
           assertInChoices('pl-symbolic-input', key, val, ['block', 'inline'], errors);
@@ -416,6 +460,9 @@ function checkSymbolicInput(ast: DocumentFragment | ChildNode): ValidationResult
         case 'allow-trig-functions':
         case 'show-help-text':
         case 'show-score':
+        case 'formula-editor':
+        case 'display-log-as-ln':
+        case 'display-simplified-expression':
           assertBool('pl-symbolic-input', key, val, errors);
           break;
         case 'allow-blank':
@@ -483,6 +530,7 @@ function checkNumberInput(ast: DocumentFragment | ChildNode): ValidationResult {
           }
           break;
         case 'label':
+        case 'aria-label':
         case 'suffix':
         case 'placeholder':
         case 'custom-format':
@@ -510,8 +558,10 @@ function checkNumberInput(ast: DocumentFragment | ChildNode): ValidationResult {
           break;
         case 'allow-complex':
         case 'show-correct-answer':
+        case 'show-placeholder':
         case 'allow-fractions':
         case 'show-help-text':
+        case 'show-score':
           assertBool('pl-number-input', key, val, errors);
           break;
         case 'allow-blank':
@@ -623,8 +673,11 @@ function checkStringInput(ast: DocumentFragment | ChildNode): ValidationResult {
           usedCorrectAnswer = true;
           break;
         case 'label':
+        case 'aria-label':
         case 'suffix':
         case 'placeholder':
+        case 'initial-value':
+        case 'blank-value':
           break;
         case 'display':
           assertInChoices('pl-string-input', key, val, ['block', 'inline'], errors);
@@ -635,6 +688,9 @@ function checkStringInput(ast: DocumentFragment | ChildNode): ValidationResult {
         case 'ignore-case':
         case 'normalize-to-ascii':
         case 'show-help-text':
+        case 'show-score':
+        case 'multiline':
+        case 'escape-unicode':
           assertBool('pl-string-input', key, val, errors);
           break;
         default:
@@ -662,8 +718,10 @@ function checkStringInput(ast: DocumentFragment | ChildNode): ValidationResult {
 function checkCheckbox(ast: DocumentFragment | ChildNode): ValidationResult {
   const errors: string[] = [];
   let usedAnswersName = false;
-  let usedPartialCredit = false;
+  let usedPartialCreditBoolean = false;
+  let usedPartialCreditEnum = false;
   let usedPartialCreditMethod = false;
+  const partialCreditEnumValues = ['off', 'coverage', 'each-answer', 'net-correct'];
   if ('attrs' in ast) {
     for (const attr of ast.attrs) {
       const key = attr.name;
@@ -680,20 +738,40 @@ function checkCheckbox(ast: DocumentFragment | ChildNode): ValidationResult {
         case 'max-select':
           assertInt('pl-checkbox', key, val, errors);
           break;
+        case 'display':
+          assertInChoices('pl-checkbox', key, val, ['block', 'inline'], errors);
+          break;
+        case 'order':
+          assertInChoices('pl-checkbox', key, val, ['random', 'fixed'], errors);
+          break;
         case 'inline':
         case 'fixed-order':
         case 'hide-help-text':
         case 'detailed-help-text':
         case 'hide-answer-panel':
         case 'hide-score-badge':
+        case 'hide-letter-keys':
+        case 'show-number-correct':
           assertBool('pl-checkbox', key, val, errors);
           break;
 
         case 'partial-credit':
-          assertBool('pl-checkbox', key, val, errors);
-          usedPartialCredit = isBooleanTrue(val);
+          // Accepts both old style (boolean) and new style (enum)
+          assertInChoices(
+            'pl-checkbox',
+            key,
+            val,
+            [...BOOLEAN_VALUES, ...partialCreditEnumValues],
+            errors,
+          );
+          if (BOOLEAN_VALUES.includes(val)) {
+            usedPartialCreditBoolean = true;
+          } else if (partialCreditEnumValues.includes(val)) {
+            usedPartialCreditEnum = true;
+          }
           break;
         case 'partial-credit-method':
+          // Deprecated: used with old-style boolean partial-credit
           assertInChoices('pl-checkbox', key, val, ['COV', 'EDC', 'PC'], errors);
           usedPartialCreditMethod = true;
           break;
@@ -705,9 +783,14 @@ function checkCheckbox(ast: DocumentFragment | ChildNode): ValidationResult {
   if (!usedAnswersName) {
     errors.push('pl-checkbox: answers-name is a required attribute.');
   }
-  if (usedPartialCreditMethod && !usedPartialCredit) {
+  if (usedPartialCreditMethod && !usedPartialCreditBoolean) {
     errors.push(
-      'pl-checkbox: if partial-credit-method is set, then partial-credit must be set to true.',
+      'pl-checkbox: partial-credit-method can only be used with boolean partial-credit values (true/false). Use partial-credit="off|coverage|each-answer|net-correct" instead.',
+    );
+  }
+  if (usedPartialCreditEnum && usedPartialCreditMethod) {
+    errors.push(
+      'pl-checkbox: partial-credit-method cannot be used with new-style partial-credit values. Remove partial-credit-method.',
     );
   }
 
@@ -718,7 +801,7 @@ function checkCheckbox(ast: DocumentFragment | ChildNode): ValidationResult {
         if (child.tagName === 'pl-answer') {
           errorsChildren = errorsChildren.concat(checkAnswerCheckbox(child));
         } else {
-          errorsChildren.push(`pl-multiple-choice: ${child.tagName} is not a valid child tag.`);
+          errorsChildren.push(`pl-checkbox: ${child.tagName} is not a valid child tag.`);
         }
       }
     }
@@ -727,36 +810,75 @@ function checkCheckbox(ast: DocumentFragment | ChildNode): ValidationResult {
   return { errors: errors.concat(errorsChildren) };
 }
 
+interface DfsResult extends ValidationResult {
+  warnings: string[];
+  mandatoryPythonCorrectAnswers: Set<string>;
+}
+
 /**
  * Checks the entire parse tree for errors in common PL tags recursively.
  * @param ast The tree to consider.
- * @returns A list of human-readable error messages, if any.
+ * @param enclosingPanel The name of the enclosing panel element (e.g. 'pl-submission-panel'), if any.
+ * @returns Errors, warnings, and mandatory correct answers.
  */
-function dfsCheckParseTree(ast: DocumentFragment | ChildNode) {
+function dfsCheckParseTree(ast: DocumentFragment | ChildNode, enclosingPanel?: string): DfsResult {
   let { errors, mandatoryPythonCorrectAnswers = new Set<string>() } = checkTag(ast);
+  let warnings: string[] = [];
+
+  if ('tagName' in ast && INPUT_ELEMENTS.has(ast.tagName) && enclosingPanel) {
+    warnings.push(
+      `<${ast.tagName}> must not be placed inside <${enclosingPanel}>. ` +
+        'Input elements must be placed at the top level of question.html (outside any panel element) ' +
+        'so they render correctly in the question, submission, and answer panels. ' +
+        `Move <${ast.tagName}> outside of <${enclosingPanel}>.`,
+    );
+  }
+
+  const childPanel =
+    'tagName' in ast && PANEL_ELEMENTS.has(ast.tagName) ? ast.tagName : enclosingPanel;
 
   if ('childNodes' in ast) {
     for (const child of ast.childNodes) {
-      const childResult = dfsCheckParseTree(child);
+      const childResult = dfsCheckParseTree(child, childPanel);
       errors = errors.concat(childResult.errors);
+      warnings = warnings.concat(childResult.warnings);
       childResult.mandatoryPythonCorrectAnswers.forEach((x) =>
         mandatoryPythonCorrectAnswers.add(x),
       );
     }
   }
 
-  return { errors, mandatoryPythonCorrectAnswers } satisfies ValidationResult;
+  return { errors, warnings, mandatoryPythonCorrectAnswers };
 }
 
 /**
- * Checks for errors in common PL elements in an index.html file.
+ * Checks for errors and warnings in common PL elements in a question.html file.
  * @param file The raw text of the file to use.
  * @param hasServerPy True if a server.py file is present, else false.
- * @returns A list of human-readable render error messages, if any.
+ * @returns Errors that must be fixed and warnings about likely issues.
  */
-export function validateHTML(file: string, hasServerPy: boolean): string[] {
+export function validateHTML(file: string, hasServerPy: boolean): HTMLValidationResult {
+  const forbiddenTagMatch = file.match(/^\s*<(!doctype|html|body|head)[\s>]/i);
+  if (forbiddenTagMatch) {
+    const tag = forbiddenTagMatch[1].toLowerCase();
+    if (tag === '!doctype') {
+      return {
+        errors: [
+          'The <!DOCTYPE> declaration must not be included. Only generate the inner content that would go inside the <body> tag.',
+        ],
+        warnings: [],
+      };
+    }
+    return {
+      errors: [
+        `The <${tag}> tag must not be included. Only generate the inner content that would go inside the <body> tag.`,
+      ],
+      warnings: [],
+    };
+  }
+
   const tree = parse5.parseFragment(file);
-  const { errors, mandatoryPythonCorrectAnswers } = dfsCheckParseTree(tree);
+  const { errors, warnings, mandatoryPythonCorrectAnswers } = dfsCheckParseTree(tree);
 
   const usedTemplateNames = extractMustacheTemplateNames(file);
   const templates = [
@@ -776,5 +898,5 @@ export function validateHTML(file: string, hasServerPy: boolean): string[] {
     }
   }
 
-  return errors;
+  return { errors, warnings };
 }

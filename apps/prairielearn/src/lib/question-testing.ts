@@ -1,7 +1,7 @@
 import * as cheerio from 'cheerio';
 import { ElementType } from 'domelementtype';
+import { isEqual, pick, range } from 'es-toolkit';
 import jsonStringifySafe from 'json-stringify-safe';
-import _ from 'lodash';
 import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
@@ -194,7 +194,7 @@ function compareTestResults(
   const checkEqual = (name: string, var1: any, var2: any) => {
     const json1 = jsonStringifySafe(var1);
     const json2 = jsonStringifySafe(var2);
-    if (!_.isEqual(var1, var2)) {
+    if (!isEqual(var1, var2)) {
       courseIssues.push(new Error(`"${name}" mismatch: expected "${json1}" but got "${json2}"`));
     }
   };
@@ -306,23 +306,32 @@ async function testVariant(
 /**
  * Test a question. Issues will be inserted into the issues table.
  *
- * @param question - The question for the variant.
- * @param course_instance - The course instance for the variant.
- * @param variant_course - The course for the variant.
- * @param test_type - The type of test to run.
- * @param authn_user_id - The currently authenticated user.
- * @param user_id - The current effective user.
- * @param variant_seed - Optional seed for the variant.
+ * @param params
+ * @param params.question - The question for the variant.
+ * @param params.course_instance - The course instance for the variant.
+ * @param params.variant_course - The course for the variant.
+ * @param params.test_type - The type of test to run.
+ * @param params.authn_user_id - The currently authenticated user.
+ * @param params.user_id - The current effective user.
+ * @param params.variant_seed - Optional seed for the variant.
  */
-async function testQuestion(
-  question: Question,
-  course_instance: CourseInstance | null,
-  variant_course: Course,
-  test_type: TestType,
-  authn_user_id: string,
-  user_id: string,
-  variant_seed?: string,
-): Promise<TestQuestionResults> {
+async function testQuestion({
+  question,
+  course_instance,
+  variant_course,
+  test_type,
+  authn_user_id,
+  user_id,
+  variant_seed,
+}: {
+  question: Question;
+  course_instance: CourseInstance | null;
+  variant_course: Course;
+  test_type: TestType;
+  authn_user_id: string;
+  user_id: string;
+  variant_seed?: string;
+}): Promise<TestQuestionResults> {
   let generateDuration;
   let initialRenderDuration;
   let gradeDuration;
@@ -339,10 +348,10 @@ async function testQuestion(
   const client_fingerprint_id = null;
   const generateStart = Date.now();
   try {
-    variant = await ensureVariant(
-      question.id,
+    variant = await ensureVariant({
+      question_id: question.id,
       instance_question_id,
-      authn_user_id,
+      user_id: authn_user_id,
       authn_user_id,
       course_instance,
       variant_course,
@@ -350,7 +359,7 @@ async function testQuestion(
       options,
       require_open,
       client_fingerprint_id,
-    );
+    });
   } finally {
     const generateEnd = Date.now();
     generateDuration = generateEnd - generateStart;
@@ -484,48 +493,47 @@ async function runTest({
   variant_seed?: string;
 }): Promise<{ success: boolean; stats: TestResultStats }> {
   logger.verbose('Testing ' + question.qid);
-  const { variant, expectedTestData, submission, stats } = await testQuestion(
+  const { variant, expectedTestData, submission, stats } = await testQuestion({
     question,
     course_instance,
-    course,
+    variant_course: course,
     test_type,
     authn_user_id,
     user_id,
     variant_seed,
-  );
+  });
 
   if (showDetails) {
-    const variantKeys = ['broken_at', 'options', 'params', 'true_answer', 'variant_seed'];
+    const variantKeys = ['broken_at', 'options', 'params', 'true_answer', 'variant_seed'] as const;
     const expectedDataKeys = [
       'format_errors',
       'gradable',
       'partial_scores',
       'raw_submitted_answer',
       'score',
-    ];
+    ] as const;
     const submissionKeys = [
       'broken',
       'correct',
       'feedback',
       'format_errors',
       'gradable',
-      'grading_method',
       'partial_scores',
       'raw_submitted_answer',
       'score',
       'submitted_answer',
       'true_answer',
-    ];
-    logger.verbose('variant:\n' + jsonStringifySafe(_.pick(variant, variantKeys), null, '    '));
+    ] as const;
+    logger.verbose('variant:\n' + jsonStringifySafe(pick(variant, variantKeys), null, '    '));
     if (expectedTestData) {
       logger.verbose(
         'expectedTestData:\n' +
-          jsonStringifySafe(_.pick(expectedTestData, expectedDataKeys), null, '    '),
+          jsonStringifySafe(pick(expectedTestData, expectedDataKeys), null, '    '),
       );
     }
     if (submission) {
       logger.verbose(
-        'submission:\n' + jsonStringifySafe(_.pick(submission, submissionKeys), null, '    '),
+        'submission:\n' + jsonStringifySafe(pick(submission, submissionKeys), null, '    '),
       );
     }
   }
@@ -594,7 +602,7 @@ export async function startTestQuestion({
   const stats: TestResultStats[] = [];
 
   serverJob.executeInBackground(async (job) => {
-    for (const iter of Array.from({ length: count * TEST_TYPES.length }).keys()) {
+    for (const iter of range(count * TEST_TYPES.length)) {
       const type = TEST_TYPES[iter % TEST_TYPES.length];
       const testIterationIndex = Math.floor(iter / TEST_TYPES.length) + 1;
       // Generate a deterministic seed if a prefix was provided, otherwise let the system generate a random one

@@ -10,19 +10,23 @@ import { DateFromISOString, IdSchema } from '@prairielearn/zod';
 import { selectAssessmentInfoForJob } from '../models/assessment.js';
 
 import {
+  computeAssessmentInstanceScoreByZone,
+  updateAssessmentInstanceGrade,
+} from './assessment-grading.js';
+import {
   type Assessment,
   type AssessmentInstance,
   AssessmentInstanceSchema,
   ClientFingerprintSchema,
   CourseSchema,
   QuestionSchema,
+  type User,
   VariantSchema,
 } from './db-types.js';
 import { gradeVariant } from './grading.js';
+import { getGroupId } from './groups.js';
 import * as ltiOutcomes from './ltiOutcomes.js';
-import type { UntypedResLocals } from './res-locals.types.js';
 import { createServerJob } from './server-jobs.js';
-import { getTeamId } from './teams.js';
 
 const debug = debugfn('prairielearn:assessment');
 const sql = sqldb.loadSqlEquiv(import.meta.url);
@@ -132,10 +136,10 @@ export async function makeAssessmentInstance({
   client_fingerprint_id: string | null;
 }): Promise<string> {
   return await sqldb.runInTransactionAsync(async () => {
-    let team_id: string | null = null;
+    let group_id: string | null = null;
     if (assessment.team_work) {
-      team_id = await getTeamId(assessment.id, user_id);
-      if (team_id == null) {
+      group_id = await getGroupId(assessment.id, user_id);
+      if (group_id == null) {
         throw new error.HttpStatusError(403, 'No group found for this user in this assessment');
       }
     }
@@ -144,7 +148,7 @@ export async function makeAssessmentInstance({
       sql.insert_assessment_instance,
       {
         assessment_id: assessment.id,
-        team_id,
+        group_id,
         user_id,
         mode,
         time_limit_min,
@@ -198,9 +202,12 @@ export async function updateAssessmentInstance(
       IdSchema,
     );
 
+    const pointsByZone = await computeAssessmentInstanceScoreByZone({ assessment_instance_id });
+    const totalPointsZones = pointsByZone.reduce((sum, zone) => sum + zone.max_points, 0);
+
     const newMaxPoints = await sqldb.queryOptionalRow(
       sql.update_assessment_instance_max_points,
-      { assessment_instance_id, authn_user_id },
+      { assessment_instance_id, total_points_zones: totalPointsZones, authn_user_id },
       AssessmentInstanceSchema.pick({ max_points: true, max_bonus_points: true }),
     );
     // If assessment was not updated, grades do not need to be recomputed.
@@ -208,20 +215,12 @@ export async function updateAssessmentInstance(
 
     // if updated, regrade to pick up max_points changes, etc.
     if (recomputeGrades) {
-      await sqldb.callRow(
-        'assessment_instances_grade',
-        [
-          assessment_instance_id,
-          authn_user_id,
-          null, // credit
-          true, // only_log_if_score_updated
-        ],
-        z.object({
-          updated: z.boolean(),
-          new_points: z.number(),
-          new_score_perc: z.number(),
-        }),
-      );
+      await updateAssessmentInstanceGrade({
+        assessment_instance_id,
+        authn_user_id,
+        onlyLogIfScoreUpdated: true,
+        precomputedPointsByZone: pointsByZone,
+      });
     }
     return true;
   });
@@ -346,6 +345,38 @@ export async function gradeAssessmentInstance({
   await sqldb.execute(sql.unset_grading_needed, { assessment_instance_id });
 }
 
+export async function crossLockpoint({
+  assessmentInstance,
+  zoneId,
+  authnUser,
+}: {
+  assessmentInstance: AssessmentInstance;
+  zoneId: string;
+  authnUser: User;
+}): Promise<void> {
+  const crossedLockpointId = await sqldb.queryOptionalRow(
+    sql.cross_lockpoint,
+    { assessment_instance_id: assessmentInstance.id, zone_id: zoneId, authn_user_id: authnUser.id },
+    IdSchema,
+  );
+  if (crossedLockpointId != null) return;
+
+  // The INSERT uses ON CONFLICT DO NOTHING, which returns nothing both when
+  // the conflict fires (already crossed) and when the WHERE conditions fail
+  // (not eligible to cross). This second query distinguishes those cases.
+  const alreadyCrossed = await sqldb.queryOptionalRow(
+    sql.check_lockpoint_crossed,
+    { assessment_instance_id: assessmentInstance.id, zone_id: zoneId },
+    IdSchema,
+  );
+  if (alreadyCrossed != null) return;
+
+  throw new error.HttpStatusError(
+    403,
+    'Unable to cross this lockpoint. Please return to the assessment overview and try again.',
+  );
+}
+
 const InstancesToGradeSchema = z.object({
   assessment_instance_id: IdSchema,
   instance_number: z.number(),
@@ -460,7 +491,7 @@ export async function updateAssessmentStatistics(assessment_id: string): Promise
   });
 }
 
-export async function updateAssessmentInstanceScore(
+export async function setAssessmentInstanceScore(
   assessment_instance_id: string,
   score_perc: number,
   authn_user_id: string,
@@ -481,7 +512,7 @@ export async function updateAssessmentInstanceScore(
   });
 }
 
-export async function updateAssessmentInstancePoints(
+export async function setAssessmentInstancePoints(
   assessment_instance_id: string,
   points: number,
   authn_user_id: string,
@@ -544,7 +575,7 @@ export async function selectAssessmentInstanceLogCursor(
   );
 }
 
-export async function updateAssessmentQuestionStats(assessment_question_id: string): Promise<void> {
+async function updateAssessmentQuestionStats(assessment_question_id: string): Promise<void> {
   await sqldb.execute(sql.calculate_stats_for_assessment_question, { assessment_question_id });
 }
 
@@ -588,55 +619,6 @@ export async function deleteAllAssessmentInstancesForAssessment(
     assessment_id,
     authn_user_id,
   });
-}
-
-/**
- * This is used to conditionally display/permit a shortcut to delete the
- * assessment instance. Usually, the only way to delete an assessment instance
- * is from the "Students" tab of an assessment. However, when a staff member is
- * iterating on or testing an assessment, it can be tedious to constantly go
- * back to that page to delete the instance in order to recreate it.
- *
- * The shortcut is a "Regenerate assessment instance" button on the assessment
- * instance page and instance question page. It's only displayed if the user
- * has the necessary permissions: either "Previewer" or above access on the
- * course, or "Student Data Viewer" or above access on the course instance.
- * We're deliberately permissive with these permissions to allow "untrusted"
- * course staff to e.g. perform quality control on assessments.
- *
- * We have an extra check: the instance must have been created by a user that
- * was an instructor at the time of creation. This addresses the case where
- * some user was an enrolled student in course instance X and was later added
- * as course staff to course instance Y. In this case, the user should not be
- * able to delete their old assessment instances in course instance X. This
- * check is performed with the `assessment_instances.include_in_statistics`
- * column, which reflects whether or not the user was an instructor at the time
- * of creation. We'll rename this column to something more general, e.g.
- * `created_by_instructor`, in a future migration.
- *
- * There's one exception to the above check: the example course, where
- * `include_in_statistics` is generally `false` even when instructors create
- * assessment instances; this is because the example course has weird implicit
- * permissions.
- *
- * Note that we check for `authn_` permissions specifically. This ensures that
- * the menu appears for both "student view" and "student view without access
- * restrictions".
- *
- * @returns Whether or not the user should be allowed to delete the assessment instance.
- */
-export function canDeleteAssessmentInstance(resLocals: UntypedResLocals): boolean {
-  return (
-    // Check for permissions.
-    (resLocals.authz_data.authn_has_course_permission_preview ||
-      resLocals.authz_data.authn_has_course_instance_permission_view) &&
-    // Check that the assessment instance belongs to this user, or that the
-    // user belongs to the team that created the assessment instance.
-    resLocals.authz_result.authorized_edit &&
-    // Check that the assessment instance was created by an instructor; bypass
-    // this check if the course is an example course.
-    (!resLocals.assessment_instance.include_in_statistics || resLocals.course.example_course)
-  );
 }
 
 export async function selectAssessmentInstanceLastSubmissionDate(assessment_instance_id: string) {

@@ -20,44 +20,47 @@ Each assessment must set the following properties in their `infoAssessment.json`
 
 In addition to those properties, the following properties can be used to further configure how the assessment behaves. Most assessments will need to configure the [`allowAccess`](../assessment/accessControl.md) property to control access to the assessment, and the [`zones`](#question-specification) property, which breaks down the assessment into zones of questions. Each zone allows for additional configuration of the questions within the zone.
 
-| Property                                            | Type    | Description                                                                                                                 |
-| --------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
-| [`module`](#grouping-assessments-by-modules)        | string  | The module that this assessment belongs to (e.g., `Chapter 3`). (default: `"Default"`)                                      |
-| [`allowAccess`](../assessment/accessControl.md)     | array   | List of access rules. (default: no student access)                                                                          |
-| [`zones`](#question-specification)                  | array   | Specification of zones and questions. (default: none)                                                                       |
-| `text`                                              | string  | HTML text shown on the assessment overview page. (default: none)                                                            |
-| `multipleInstance`                                  | boolean | Whether to allow students to create whole new attempts at the entire assessment. (default: `false`)                         |
-| `maxPoints`                                         | number  | The maximum points that can be earned. (default: sum of zone max points)                                                    |
-| [`maxBonusPoints`](#assessment-points)              | number  | The maximum number of additional points that can be earned beyond `maxPoints`. (default: 0)                                 |
-| [`shuffleQuestions`](#question-order-randomization) | boolean | Whether to randomize the question order. (default: `false` for Homework-type assessments, `true` for Exam-type assessments) |
-| `autoClose`                                         | boolean | Whether to automatically close the assessment after 6 hours of inactivity (Exams only). (default: `true`)                   |
-| `allowIssueReporting`                               | boolean | Whether to allow students to report question issues. (default: `true`)                                                      |
-| `allowPersonalNotes`                                | boolean | Whether to allow students to add personal notes. (default: `true`)                                                          |
-| `constantQuestionValue`                             | boolean | Whether to disable the question value boost on correct solutions (Homework only). (default: `false`)                        |
-| `allowRealTimeGrading`                              | boolean | Whether to grade questions in real time (Exams only). (default: `true`)                                                     |
-| `requireHonorCode`                                  | boolean | Whether to require students to agree to the honor code (Exams only). (default: `true`)                                      |
-| `honorCode`                                         | string  | Custom text to be specified for the honor code (Exams only). (default: none)                                                |
-| `advanceScorePerc`                                  | number  | Minimum score percentage require to advance to the next question (Exams only). (default: 0)                                 |
-| `gradeRateMinutes`                                  | number  | Minimum amount of time (in minutes) between graded submissions to the same question. (default: 0)                           |
-
-### Group work
-
-The following group work properties (all optional) can be used to configure group work for an assessment.
-
-| Property                                                          | Type    | Description                                                                                                                     |
-| ----------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| [`groupWork`](#enabling-group-work-for-collaborative-assessments) | boolean | Whether the assessment will support group work. (default: `false`)                                                              |
-| `groupMaxSize`                                                    | number  | Maximum number of students in a group. (default: none)                                                                          |
-| `groupMinSize`                                                    | number  | Minimum number of students in a group. (default: none)                                                                          |
-| [`groupRoles`](#enabling-custom-group-roles)                      | array   | Array of custom user roles in a group. (default: none)                                                                          |
-| `canSubmit`                                                       | array   | A list of group role names that can submit questions in this assessment. Only applicable for group assessments. (default: none) |
-| `canView`                                                         | array   | A list of group role names that can view questions in this assessment. Only applicable for group assessments. (default: none)   |
-| `studentGroupCreate`                                              | boolean | Whether students can create groups. (default: `false`)                                                                          |
-| `studentGroupJoin`                                                | boolean | Whether students can join groups. (default: `false`)                                                                            |
-| `studentGroupLeave`                                               | boolean | Whether students can leave groups. (default: `false`)                                                                           |
-| `studentGroupChooseName`                                          | boolean | Whether students can choose their own group name. (default: `true`)                                                             |
+| Property                                                       | Type    | Description                                                                                                                 |
+| -------------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------- |
+| [`module`](#grouping-assessments-by-modules)                   | string  | The module that this assessment belongs to (e.g., `Chapter 3`). (default: `"Default"`)                                      |
+| [`allowAccess`](../assessment/accessControl.md)                | array   | List of access rules. (default: no student access)                                                                          |
+| [`zones`](#question-specification)                             | array   | Specification of zones and questions. (default: none)                                                                       |
+| `text`                                                         | string  | HTML text shown on the assessment overview page. (default: none)                                                            |
+| `multipleInstance`                                             | boolean | Whether to allow students to create whole new attempts at the entire assessment. (default: `false`)                         |
+| `maxPoints`                                                    | number  | The maximum points that can be earned. (default: sum of zone max points)                                                    |
+| [`maxBonusPoints`](#assessment-points)                         | number  | The maximum number of additional points that can be earned beyond `maxPoints`. (default: 0)                                 |
+| [`shuffleQuestions`](#question-order-randomization)            | boolean | Whether to randomize the question order. (default: `false` for Homework-type assessments, `true` for Exam-type assessments) |
+| `autoClose`                                                    | boolean | Whether to automatically close the assessment after 6 hours of inactivity (Exams only). (default: `true`)                   |
+| `allowIssueReporting`                                          | boolean | Whether to allow students to report question issues. (default: `true`)                                                      |
+| `allowPersonalNotes`                                           | boolean | Whether to allow students to add personal notes. (default: `true`)                                                          |
+| `constantQuestionValue`                                        | boolean | Whether to disable the question value boost on correct solutions (Homework only). (default: `false`)                        |
+| `allowRealTimeGrading`                                         | boolean | Whether to grade questions in real time (Exams only). (default: `true`)                                                     |
+| `requireHonorCode`                                             | boolean | Whether to require students to agree to the honor code (Exams only). (default: `true`)                                      |
+| `honorCode`                                                    | string  | Custom text to be specified for the honor code (Exams only). (default: none)                                                |
+| `advanceScorePerc`                                             | number  | Minimum score percentage require to advance to the next question (Exams only). (default: 0)                                 |
+| `gradeRateMinutes`                                             | number  | Minimum amount of time (in minutes) between graded submissions to the same question. (default: 0)                           |
+| [`groups`](#enabling-group-work-for-collaborative-assessments) | object  | Configuration for group-based assessments. (default: none)                                                                  |
 
 See the [reference for `infoAssessment.json`](../schemas/infoAssessment.md) for more information about what can be added to this file.
+
+??? note "Legacy group properties"
+
+    The following legacy properties are still supported but will be eventually deprecated in favor of the `groups` schema.
+
+    | Property                   | Type    | Description                                                                                                                     |
+    | -------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------- |
+    | `groupWork`                | boolean | Whether the assessment will support group work. (default: `false`)                                                              |
+    | `groupMaxSize`             | number  | Maximum number of students in a group. (default: none)                                                                          |
+    | `groupMinSize`             | number  | Minimum number of students in a group. (default: none)                                                                          |
+    | `groupRoles`               | array   | Array of custom user roles in a group. (default: none)                                                                          |
+    | `canSubmit`                | array   | A list of group role names that can submit questions in this assessment. Only applicable for group assessments. (default: none) |
+    | `canView`                  | array   | A list of group role names that can view questions in this assessment. Only applicable for group assessments. (default: none)   |
+    | `studentGroupCreate`       | boolean | Whether students can create groups. (default: `false`)                                                                          |
+    | `studentGroupJoin`         | boolean | Whether students can join groups. (default: `false`)                                                                            |
+    | `studentGroupLeave`        | boolean | Whether students can leave groups. (default: `false`)                                                                           |
+    | `studentGroupChooseName`   | boolean | Whether students can choose their own group name. (default: `true`)                                                             |
+
+    You cannot use both `groups` and legacy group properties in the same assessment.
 
 ## Assessment types
 
@@ -154,15 +157,16 @@ An assessment is broken down in to a list of zones, like this:
 }
 ```
 
-| Zone Property          | Type    | Description                                                                                                                                           |
-| ---------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `title`                | string  | The title of the zone. (Optional; default: none)                                                                                                      |
-| `questions`            | array   | The list of slots for questions and question alternatives within the zone. (Required; no default)                                                     |
-| `numberChoose`         | integer | Number of questions to select for each student from this zone. (Optional; default: select all)                                                        |
-| `maxPoints`            | number  | Limit on the number of points that can be earned from this zone. (Optional; default: sum of question max points)                                      |
-| `bestQuestions`        | integer | Only this many questions in the zone will count towards the total points (highest-point questions will count). (Optional; default: use all questions) |
-| `allowRealTimeGrading` | boolean | Whether to grade questions in this zone in real time (Exams only). (Optional; default: `true`)                                                        |
-| `comment`              | string  | Free‑form comment for the zone. (Optional; default: none)                                                                                             |
+| Zone Property              | Type    | Description                                                                                                                                           |
+| -------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`                    | string  | The title of the zone. (Optional; default: none)                                                                                                      |
+| `questions`                | array   | The list of slots for questions and question alternatives within the zone. (Required; no default)                                                     |
+| `numberChoose`             | integer | Number of questions to select for each student from this zone. (Optional; default: select all)                                                        |
+| `maxPoints`                | number  | Limit on the number of points that can be earned from this zone. (Optional; default: sum of question max points)                                      |
+| `bestQuestions`            | integer | Only this many questions in the zone will count towards the total points (highest-point questions will count). (Optional; default: use all questions) |
+| [`lockpoint`](#lockpoints) | boolean | Creates a one-way barrier at this zone; crossing it makes all earlier zones read-only. (Optional; default: `false`)                                   |
+| `allowRealTimeGrading`     | boolean | Whether to grade questions in this zone in real time (Exams only). (Optional; default: `true`)                                                        |
+| `comment`                  | string  | Free‑form comment for the zone. (Optional; default: none)                                                                                             |
 
 Zone specification details are in the [format specification for `infoAssessment.json`](../schemas/infoAssessment.md)
 
@@ -395,31 +399,74 @@ Note that this setting is not suitable in scenarios where multiple attempts are 
 
 ## Enabling group work for collaborative assessments
 
-By default, assessment instances are tied to only one user. By setting `"groupWork": true`, multiple students will be able to work on the same assessment instance. Group configuration can be set in the `infoAssessment.json` file. For example:
+By default, assessment instances are tied to only one user. By using the `groups` configuration, multiple students will be able to work on the same assessment instance.
 
 ```json title="infoAssessment.json"
 {
-  "groupWork": true,
-  "groupMaxSize": 6,
-  "groupMinSize": 2,
-  "studentGroupCreate": true,
-  "studentGroupChooseName": true,
-  "studentGroupJoin": true,
-  "studentGroupLeave": true
+  "groups": {
+    "minMembers": 2,
+    "maxMembers": 6,
+    "studentPermissions": {
+      "canCreateGroup": true,
+      "canJoinGroup": true,
+      "canLeaveGroup": true,
+      "canNameGroup": true
+    }
+  }
 }
 ```
 
-| Attribute                | Type    | Default | Description                                                                                                |
-| ------------------------ | ------- | ------- | ---------------------------------------------------------------------------------------------------------- |
-| `groupWork`              | boolean | false   | Enable the group work for the assessment.                                                                  |
-| `groupMaxSize`           | integer | -       | The maximum size of a group (default: no minimum).                                                         |
-| `groupMinSize`           | integer | -       | The minimum size of a group (default: no maximum).                                                         |
-| `studentGroupCreate`     | boolean | false   | Allow students to create groups.                                                                           |
-| `studentGroupChooseName` | boolean | true    | Allow students to choose a group name when creating a group. If set to false, a default name will be used. |
-| `studentGroupJoin`       | boolean | false   | Allow students to join other groups by join code.                                                          |
-| `studentGroupLeave`      | boolean | false   | Allow students to leave groups.                                                                            |
+### Groups configuration
 
-Note that changing an assessment from individual to group or vice versa after students have started working on it will cause student work to be lost.
+The `groups` object supports the following properties:
+
+| Attribute            | Type    | Default | Description                                                                                                                      |
+| -------------------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`            | boolean | `true`  | Whether groups are enabled for this assessment.                                                                                  |
+| `minMembers`         | integer | -       | The minimum number of students in a group.                                                                                       |
+| `maxMembers`         | integer | -       | The maximum number of students in a group.                                                                                       |
+| `roles`              | array   | `[]`    | Array of custom user roles in a group. See [Enabling custom group roles](#enabling-custom-group-roles).                          |
+| `studentPermissions` | object  | `{}`    | Student permissions for group management. See below.                                                                             |
+| `rolePermissions`    | object  | `{}`    | Role-based permissions for group assessments. See [Adding permissions for an assessment](#adding-permissions-for-an-assessment). |
+
+### Student permissions
+
+The `studentPermissions` object controls what students can do to manage their groups:
+
+| Attribute        | Type    | Default | Description                                                                                                |
+| ---------------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+| `canCreateGroup` | boolean | `false` | Allow students to create groups.                                                                           |
+| `canJoinGroup`   | boolean | `false` | Allow students to join other groups by join code.                                                          |
+| `canLeaveGroup`  | boolean | `false` | Allow students to leave groups.                                                                            |
+| `canNameGroup`   | boolean | `true`  | Allow students to choose a group name when creating a group. If set to false, a default name will be used. |
+
+Note that changing an assessment from individual to group-based or vice versa after students have started working on it will cause student work to be lost.
+
+??? note "Legacy group properties"
+
+    The legacy format for enabling group work uses `groupWork: true` along with other top-level properties:
+
+    ```json title="infoAssessment.json"
+    {
+      "groupWork": true,
+      "groupMaxSize": 6,
+      "groupMinSize": 2,
+      "studentGroupCreate": true,
+      "studentGroupChooseName": true,
+      "studentGroupJoin": true,
+      "studentGroupLeave": true
+    }
+    ```
+
+    | Attribute                | Type    | Default | Description                                                                                                |
+    | ------------------------ | ------- | ------- | ---------------------------------------------------------------------------------------------------------- |
+    | `groupWork`              | boolean | false   | Enable the group work for the assessment.                                                                  |
+    | `groupMaxSize`           | integer | -       | The maximum size of a group (default: no maximum).                                                         |
+    | `groupMinSize`           | integer | -       | The minimum size of a group (default: no minimum).                                                         |
+    | `studentGroupCreate`     | boolean | false   | Allow students to create groups.                                                                           |
+    | `studentGroupChooseName` | boolean | true    | Allow students to choose a group name when creating a group. If set to false, a default name will be used. |
+    | `studentGroupJoin`       | boolean | false   | Allow students to join other groups by join code.                                                          |
+    | `studentGroupLeave`      | boolean | false   | Allow students to leave groups.                                                                            |
 
 ### Managing groups
 
@@ -428,7 +475,7 @@ Instructors can manage groups on the "Groups" tab of an assessment. This page al
 To create groups in bulk, upload a CSV file in the following format:
 
 ```csv
-groupName,UID
+group_name,uid
 groupA,one@example.com
 groupA,two@example.com
 groupB,three@example.com
@@ -457,7 +504,7 @@ Students are able to see their groupmates' UIDs, which can become a point of con
 
 ### Enabling custom group roles
 
-By default, students working in a collaborative group assessments can view and submit every question. However, instructors can define **custom group roles**, which can be assigned different permissions to facilitate role-based teamwork. Assessments can be configured to allow or restrict some operations to students with specific roles, such as:
+By default, students working in collaborative group assessments can view and submit every question. However, instructors can define **custom group roles**, which can be assigned different permissions to facilitate role-based teamwork. Assessments can be configured to allow or restrict some operations to students with specific roles, such as:
 
 - Submitting specific questions
 - Viewing specific questions
@@ -465,60 +512,115 @@ By default, students working in a collaborative group assessments can view and s
 
 Although in most cases each student is expected to take one role, students are allowed to take on multiple roles in some narrow scenarios, such as when users leave and join groups after assessments have started.
 
-To opt in to custom group roles, group roles must be defined at the root of the `infoAssessment.json` file. For example:
+To opt in to custom group roles, roles must be defined in the `groups.roles` array of the `infoAssessment.json` file. For example:
 
 ```json title="infoAssessment.json"
 {
-  "groupRoles": [
-    {
-      "name": "Manager",
-      "minimum": 1,
-      "maximum": 1,
-      "canAssignRoles": true
-    },
-    {
-      "name": "Recorder",
-      "minimum": 1,
-      "maximum": 1
-    },
-    {
-      "name": "Reflector",
-      "minimum": 1,
-      "maximum": 1
-    },
-    {
-      "name": "Contributor"
+  "groups": {
+    "roles": [
+      {
+        "name": "Manager",
+        "minMembers": 1,
+        "maxMembers": 1
+      },
+      {
+        "name": "Recorder",
+        "minMembers": 1,
+        "maxMembers": 1
+      },
+      {
+        "name": "Reflector",
+        "minMembers": 1,
+        "maxMembers": 1
+      },
+      {
+        "name": "Contributor"
+      }
+    ],
+    "rolePermissions": {
+      "canAssignRoles": ["Manager"]
     }
-  ]
+  }
 }
 ```
 
-| Attribute        | Type    | Default | Description                                                                  |
-| ---------------- | ------- | ------- | ---------------------------------------------------------------------------- |
-| `name`           | string  | -       | The name of the role.                                                        |
-| `minimum`        | integer | 0       | The minimum required number of students holding this role in the assessment. |
-| `maximum`        | integer | -       | The maximum required number of students holding this role in the assessment. |
-| `canAssignRoles` | boolean | false   | Allow students with this role to assign roles to other students.             |
+| Attribute    | Type    | Default | Description                                                                  |
+| ------------ | ------- | ------- | ---------------------------------------------------------------------------- |
+| `name`       | string  | -       | The name of the role.                                                        |
+| `minMembers` | integer | 0       | The minimum required number of students holding this role in the assessment. |
+| `maxMembers` | integer | -       | The maximum required number of students holding this role in the assessment. |
+
+??? note "Legacy group roles format"
+
+    The legacy format for defining custom group roles uses `groupRoles` at the root level:
+
+    ```json title="infoAssessment.json"
+    {
+      "groupRoles": [
+        {
+          "name": "Manager",
+          "minimum": 1,
+          "maximum": 1,
+          "canAssignRoles": true
+        },
+        {
+          "name": "Recorder",
+          "minimum": 1,
+          "maximum": 1
+        },
+        {
+          "name": "Reflector",
+          "minimum": 1,
+          "maximum": 1
+        },
+        {
+          "name": "Contributor"
+        }
+      ]
+    }
+    ```
+
+    | Attribute        | Type    | Default | Description                                                                  |
+    | ---------------- | ------- | ------- | ---------------------------------------------------------------------------- |
+    | `name`           | string  | -       | The name of the role.                                                        |
+    | `minimum`        | integer | 0       | The minimum required number of students holding this role in the assessment. |
+    | `maximum`        | integer | -       | The maximum required number of students holding this role in the assessment. |
+    | `canAssignRoles` | boolean | false   | Allow students with this role to assign roles to other students.             |
 
 Students typically select their roles before starting an assessment, but they can change their roles mid-assessment if needed. As a safeguard against invalid role configurations, PrairieLearn prevents students from viewing questions if a group's role configuration does not meet the instructor's specification.
 
 #### Adding permissions for an assessment
 
-Permissions can be configured at the _assessment_, _zone_, or _question_ level.
+Permissions can be configured in two places:
 
-The schema for permissions is defined as follows:
+1. **Assessment-level defaults** using `groups.rolePermissions`
+2. **Zone or question-level overrides** using `canView` and `canSubmit`
 
-```json
+The `groups.rolePermissions` object defines default permissions for the entire assessment:
+
+```json title="infoAssessment.json"
 {
-  "canView": ["Manager", "Reflector", "Recorder", "Contributor"],
-  "canSubmit": ["Recorder"]
+  "groups": {
+    "roles": [
+      { "name": "Manager", "minMembers": 1, "maxMembers": 1 },
+      { "name": "Recorder", "minMembers": 1, "maxMembers": 1 },
+      { "name": "Reflector", "minMembers": 1, "maxMembers": 1 },
+      { "name": "Contributor" }
+    ],
+    "rolePermissions": {
+      "canAssignRoles": ["Manager"],
+      "canView": ["Manager", "Reflector", "Recorder", "Contributor"],
+      "canSubmit": ["Recorder"]
+    }
+  }
 }
 ```
 
-| Attribute   | Type            | Default | Description                                                     |
-| ----------- | --------------- | ------- | --------------------------------------------------------------- |
-| `canView`   | Array of string | -       | The names of roles that can view this part of the assessment.   |
-| `canSubmit` | Array of string | -       | The names of roles that can submit this part of the assessment. |
+| Attribute        | Type            | Default | Description                                                      |
+| ---------------- | --------------- | ------- | ---------------------------------------------------------------- |
+| `canAssignRoles` | Array of string | `[]`    | The names of roles that can assign other users to roles.         |
+| `canView`        | Array of string | -       | The names of roles that can view questions in this assessment.   |
+| `canSubmit`      | Array of string | -       | The names of roles that can submit questions in this assessment. |
 
 Setting either `canView` or `canSubmit` to `[]` (empty array) means that **no role** can view or submit that part of the assessment, respectively. If either attribute is not set, it means that **every role** has the permission associated to the attribute, i.e., any student with any role can view or submit that part of the assessment.
 
@@ -526,14 +628,19 @@ Permissions defined at a higher level are propagated down the assessment hierarc
 
 ```json title="infoAssessment.json"
 {
-  "canView": ["Manager", "Reflector", "Recorder"],
+  "groups": {
+    "roles": [{ "name": "Manager" }, { "name": "Recorder" }, { "name": "Reflector" }],
+    "rolePermissions": {
+      "canView": ["Manager", "Reflector", "Recorder"]
+    }
+  },
   "zones": [
     {
       "canSubmit": ["Recorder"],
       "questions": [
         { "id": "question1", "points": 1 },
         { "id": "question2", "points": 1, "canView": ["Recorder"] },
-        { "id": "question3", "points": 1, "canView": ["Reflector"], "canSubmit": ["Reflector"] }
+        { "id": "question3", "points": 1, "canView": ["Reflector"], "canSubmit": ["Reflector"] },
         { "id": "question4", "points": 1, "canView": null }
       ]
     }
@@ -541,7 +648,7 @@ Permissions defined at a higher level are propagated down the assessment hierarc
 }
 ```
 
-In the example above, question 1 can be viewed by students in Manager, Reflector or Recorder roles, but only students with a Recorder role can submit an answer, as per the default roles defined by in the assessment level (for viewing) and the zone level (for editing). Question 2 can only be viewed and submitted by a Recorder, while question 3 can only be viewed and submitted by a Reflector. Question 4 overrides the default settings by using the `null` special value, and allows students in any role to view the question, though only students with the Recorder role can submit an answer.
+In the example above, question 1 can be viewed by students in Manager, Reflector or Recorder roles, but only students with a Recorder role can submit an answer, as per the default roles defined in the assessment level (for viewing) and the zone level (for editing). Question 2 can only be viewed and submitted by a Recorder, while question 3 can only be viewed and submitted by a Reflector. Question 4 overrides the default settings by using the `null` special value, and allows students in any role to view the question, though only students with the Recorder role can submit an answer.
 
 #### Assigning roles to students
 
@@ -633,6 +740,52 @@ If a student uses all of their attempts on a question and cannot submit any more
 ### :warning: Warning about in-order questions and high-stakes exams
 
 The `advanceScorePerc` attribute is intended to be used in [group work](#enabling-group-work-for-collaborative-assessments) and assessment types which are indirectly supported, such as worksheets (see [multiple instance assessments](#multiple-instance-versus-single-instance-assessments)). In the interest of allowing students to best demonstrate their knowledge of course material, we **strongly** discourage the use of this feature in high-stakes exams where the student cannot receive help from course staff.
+
+## Lockpoints
+
+Lockpoints let you create one-way barriers between zones. Set `"lockpoint": true` on a zone where students must explicitly confirm moving forward. Once crossed, all questions in earlier zones become read-only: students can still view prior work and submissions, but cannot submit new answers there.
+
+```json title="infoAssessment.json"
+{
+  "uuid": "3d4ef390-5e04-4a7d-9dce-6cf8f5c17311",
+  "type": "Exam",
+  "title": "Exam with lockpoints",
+  "set": "Exam",
+  "number": "18",
+  "zones": [
+    {
+      "title": "Conceptual questions",
+      "questions": [{ "id": "addNumbers", "points": 10 }]
+    },
+    {
+      "title": "Applied questions",
+      "lockpoint": true,
+      "questions": [{ "id": "partialCredit3", "points": 10 }]
+    },
+    {
+      "title": "Advanced questions",
+      "lockpoint": true,
+      "questions": [{ "id": "orderBlocks", "points": 10 }]
+    }
+  ]
+}
+```
+
+In this configuration, students initially have access only to "Conceptual questions." After working through them, they can cross the first lockpoint to unlock "Applied questions," which makes "Conceptual questions" read-only. A second lockpoint then gates "Advanced questions" the same way.
+
+Lockpoints are crossed sequentially. If multiple lockpoints are configured, students must cross them in zone order. Zones without `"lockpoint": true` between lockpoint zones become accessible as soon as the preceding lockpoint is crossed. For example, if zones 2 and 4 have lockpoints but zone 3 does not, crossing the zone 2 lockpoint unlocks both zone 2 and zone 3.
+
+Lockpoints and `advanceScorePerc` work together: students still must satisfy any in-order gating before they can cross the next lockpoint.
+
+In group assessments, lockpoints are shared by the group. Any member can cross a lockpoint, and the resulting read-only state applies to everyone in that group.
+
+Students can finish the assessment at any time, even if some lockpoints are not crossed.
+
+Lockpoints do not make workspaces read-only. They control question submission access, not workspace container access.
+
+!!! warning "Adding lockpoints to active assessments"
+
+    To avoid surprising students, configure lockpoints before students begin an assessment. Adding lockpoints after students have already started may lock zones they were previously working in until they cross the new lockpoint.
 
 ## Auto-closing Exam assessments
 

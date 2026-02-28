@@ -9,11 +9,11 @@ WITH
       jsonb_build_object(
         'id',
         (lead(iq.id) OVER w),
-        'sequence_locked',
-        (lead(qo.sequence_locked) OVER w)
+        'question_access_mode',
+        (lead(qo.question_access_mode) OVER w)
       ) AS next_instance_question,
       qo.question_number,
-      qo.sequence_locked
+      qo.question_access_mode
     FROM
       instance_questions AS this_iq
       JOIN assessment_instances AS ai ON (ai.id = this_iq.assessment_instance_id)
@@ -74,9 +74,9 @@ SELECT
   ) AS assessment_instance_time_limit_expired,
   to_jsonb(u) AS instance_user,
   users_get_displayed_role (u.id, ci.id) AS instance_role,
-  to_jsonb(t) AS instance_team,
-  teams_uid_list (t.id) AS instance_team_uid_list,
-  to_jsonb(iq) || to_jsonb(iqnag) AS instance_question,
+  to_jsonb(g) AS instance_group,
+  teams_uid_list (g.id) AS instance_group_uid_list,
+  to_jsonb(iq) AS instance_question,
   jsonb_build_object(
     'id',
     iqi.id,
@@ -88,8 +88,8 @@ SELECT
     iqi.question_number,
     'advance_score_perc',
     aq.effective_advance_score_perc,
-    'sequence_locked',
-    iqi.sequence_locked,
+    'question_access_mode',
+    iqi.question_access_mode,
     'instructor_question_number',
     admin_assessment_question_number (aq.id)
   ) AS instance_question_info,
@@ -98,7 +98,6 @@ SELECT
   to_jsonb(a) AS assessment,
   to_jsonb(aset) AS assessment_set,
   to_jsonb(aai) AS authz_result,
-  assessment_instance_label (ai, a, aset) AS assessment_instance_label,
   fl.list AS file_list
 FROM
   instance_questions AS iq
@@ -109,9 +108,9 @@ FROM
   JOIN assessments AS a ON (a.id = ai.assessment_id)
   JOIN course_instances AS ci ON (ci.id = a.course_instance_id)
   JOIN assessment_sets AS aset ON (aset.id = a.assessment_set_id)
-  LEFT JOIN teams AS t ON (
-    t.id = ai.team_id
-    AND t.deleted_at IS NULL
+  LEFT JOIN teams AS g ON (
+    g.id = ai.team_id
+    AND g.deleted_at IS NULL
   )
   LEFT JOIN users AS u ON (u.id = ai.user_id)
   JOIN LATERAL authz_assessment_instance (
@@ -121,7 +120,6 @@ FROM
     ci.display_timezone,
     a.team_work
   ) AS aai ON TRUE
-  JOIN LATERAL instance_questions_next_allowed_grade (iq.id) AS iqnag ON TRUE
   CROSS JOIN file_list AS fl
 WHERE
   iq.id = $instance_question_id
@@ -132,4 +130,4 @@ WHERE
   )
   AND q.deleted_at IS NULL
   AND a.deleted_at IS NULL
-  AND NOT iqi.sequence_locked;
+  AND iqi.question_access_mode NOT IN ('blocked_sequence', 'blocked_lockpoint');

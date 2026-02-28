@@ -1,9 +1,10 @@
 import { UAParser } from 'ua-parser-js';
 import { z } from 'zod';
 
+import { formatDate } from '@prairielearn/formatter';
 import { escapeHtml, html } from '@prairielearn/html';
 import { run } from '@prairielearn/run';
-import { IdSchema } from '@prairielearn/zod';
+import { DateFromISOString, IdSchema } from '@prairielearn/zod';
 
 import { EditQuestionPointsScoreButtonHtml } from '../../components/EditQuestionPointsScore.js';
 import { Modal } from '../../components/Modal.js';
@@ -45,6 +46,10 @@ type AssessmentInstanceStats = z.infer<typeof AssessmentInstanceStatsSchema>;
 export const InstanceQuestionRowSchema = InstanceQuestionSchema.extend({
   instructor_question_number: z.string(),
   assessment_question: AssessmentQuestionSchema,
+  lockpoint: z.boolean(),
+  lockpoint_crossed: z.boolean(),
+  lockpoint_crossed_at: DateFromISOString.nullable(),
+  lockpoint_crossed_authn_user_uid: z.string().nullable(),
   qid: z.string().nullable(),
   question_id: IdSchema,
   question_number: z.string(),
@@ -81,7 +86,7 @@ export function InstructorAssessmentInstance({
 }) {
   return PageLayout({
     resLocals,
-    pageTitle: resLocals.instance_team?.name ?? resLocals.instance_user?.uid ?? '',
+    pageTitle: resLocals.instance_group?.name ?? resLocals.instance_user?.uid ?? '',
     navContext: {
       type: 'instructor',
       page: 'assessment',
@@ -106,8 +111,8 @@ export function InstructorAssessmentInstance({
     content: html`
       <h1 class="visually-hidden">
         ${resLocals.assessment_instance_label} instance for
-        ${resLocals.instance_team
-          ? html`${resLocals.instance_team.name}`
+        ${resLocals.instance_group
+          ? html`${resLocals.instance_group.name}`
           : html`${resLocals.instance_user.name}`}
       </h1>
       ${ResetQuestionVariantsModal({
@@ -119,8 +124,8 @@ export function InstructorAssessmentInstance({
         <div class="card-header bg-primary text-white">
           <h2>
             ${resLocals.assessment_instance_label} Summary:
-            ${resLocals.instance_team
-              ? html`${resLocals.instance_team.name} <i class="fas fa-users"></i>`
+            ${resLocals.instance_group
+              ? html`${resLocals.instance_group.name} <i class="fas fa-users"></i>`
               : html`${resLocals.instance_user.name} (${resLocals.instance_user.uid})`}
           </h2>
         </div>
@@ -130,15 +135,15 @@ export function InstructorAssessmentInstance({
             aria-label="Assessment instance summary"
           >
             <tbody>
-              ${resLocals.instance_team
+              ${resLocals.instance_group
                 ? html`
                     <tr>
                       <th>Name</th>
-                      <td colspan="2">${resLocals.instance_team.name}</td>
+                      <td colspan="2">${resLocals.instance_group.name}</td>
                     </tr>
                     <tr>
                       <th>Group Members</th>
-                      <td colspan="2">${resLocals.instance_team_uid_list.join(', ')}</td>
+                      <td colspan="2">${resLocals.instance_group_uid_list.join(', ')}</td>
                     </tr>
                   `
                 : html`
@@ -302,8 +307,8 @@ export function InstructorAssessmentInstance({
         <div class="card-header bg-primary text-white">
           <h2>
             ${resLocals.assessment_instance_label} Questions:
-            ${resLocals.instance_team
-              ? html`${resLocals.instance_team.name} <i class="fas fa-users"></i>`
+            ${resLocals.instance_group
+              ? html`${resLocals.instance_group.name} <i class="fas fa-users"></i>`
               : html`${resLocals.instance_user.name} (${resLocals.instance_user.uid})`}
           </h2>
         </div>
@@ -327,152 +332,208 @@ export function InstructorAssessmentInstance({
               </tr>
             </thead>
             <tbody>
-              ${instance_questions.map((instance_question) => {
-                return html`
-                  ${instance_question.start_new_zone && instance_question.zone_title
-                    ? html`
-                        <tr>
-                          <th colspan="9">
-                            ${instance_question.zone_title}
-                            ${instance_question.zone_has_max_points
-                              ? html`(maximum ${instance_question.zone_max_points} points)`
-                              : ''}
-                            ${instance_question.zone_has_best_questions
-                              ? html`(best ${instance_question.zone_best_questions} questions)`
-                              : ''}
-                          </th>
-                        </tr>
-                      `
-                    : ''}
-                  <tr>
-                    <td>
-                      S-${instance_question.question_number}. (<a
-                        href="/pl/course_instance/${resLocals.course_instance
-                          .id}/instance_question/${instance_question.id}/"
-                        >student view</a
-                      >)
-                    </td>
-                    <td>
-                      I-${instance_question.instructor_question_number}. ${instance_question.qid}
-                      ${resLocals.authz_data.has_course_permission_preview
-                        ? html`
-                            (<a
-                              href="${resLocals.urlPrefix}/question/${instance_question.question_id}/"
-                              >instructor view</a
-                            >)
-                          `
-                        : ''}
-                    </td>
-                    <td class="text-center">
-                      ${InstanceQuestionPoints({
-                        instance_question,
-                        assessment_question: instance_question.assessment_question,
-                        component: 'auto',
-                      })}
-                      ${resLocals.authz_data.has_course_instance_permission_edit
-                        ? EditQuestionPointsScoreButtonHtml({
-                            field: 'auto_points',
-                            instance_question,
-                            assessment_question: instance_question.assessment_question,
-                            urlPrefix: resLocals.urlPrefix,
-                            csrfToken: resLocals.__csrf_token,
-                          })
-                        : ''}
-                    </td>
-                    <td class="text-center">
-                      ${InstanceQuestionPoints({
-                        instance_question,
-                        assessment_question: instance_question.assessment_question,
-                        component: 'manual',
-                      })}
-                      ${resLocals.authz_data.has_course_instance_permission_edit
-                        ? EditQuestionPointsScoreButtonHtml({
-                            field: 'manual_points',
-                            instance_question,
-                            assessment_question: instance_question.assessment_question,
-                            urlPrefix: resLocals.urlPrefix,
-                            csrfToken: resLocals.__csrf_token,
-                          })
-                        : ''}
-                    </td>
-                    <td class="text-center">
-                      ${InstanceQuestionPoints({
-                        instance_question,
-                        assessment_question: instance_question.assessment_question,
-                        component: 'total',
-                      })}
-                      ${resLocals.authz_data.has_course_instance_permission_edit
-                        ? EditQuestionPointsScoreButtonHtml({
-                            field: 'points',
-                            instance_question,
-                            assessment_question: instance_question.assessment_question,
-                            urlPrefix: resLocals.urlPrefix,
-                            csrfToken: resLocals.__csrf_token,
-                          })
-                        : ''}
-                    </td>
-                    <td class="text-center text-nowrap" style="padding-top: 0.65rem;">
-                      ${ScorebarHtml(instance_question.score_perc)}
-                    </td>
-                    <td style="width: 1em;">
-                      ${resLocals.authz_data.has_course_instance_permission_edit
-                        ? EditQuestionPointsScoreButtonHtml({
-                            field: 'score_perc',
-                            instance_question,
-                            assessment_question: instance_question.assessment_question,
-                            urlPrefix: resLocals.urlPrefix,
-                            csrfToken: resLocals.__csrf_token,
-                          })
-                        : ''}
-                    </td>
-                    <td class="text-nowrap" style="width: 1em;">
-                      ${resLocals.authz_data.has_course_instance_permission_edit &&
-                      instance_question.status !== 'unanswered'
-                        ? html`
-                            <a
-                              class="btn btn-xs btn-secondary"
-                              href="${resLocals.urlPrefix}/assessment/${resLocals.assessment
-                                .id}/manual_grading/instance_question/${instance_question.id}"
-                              >Manual grading</a
-                            >
-                          `
-                        : ''}
-                    </td>
-                    <td class="text-end">
-                      <div class="dropdown js-question-actions">
-                        <button
-                          type="button"
-                          class="btn btn-secondary btn-xs dropdown-toggle"
-                          data-bs-toggle="dropdown"
-                          aria-haspopup="true"
-                          aria-expanded="false"
-                        >
-                          Action <span class="caret"></span>
-                        </button>
-                        <div class="dropdown-menu dropdown-menu-end">
-                          ${resLocals.authz_data.has_course_instance_permission_edit
-                            ? html`
-                                <button
-                                  class="dropdown-item"
-                                  data-bs-toggle="modal"
-                                  data-bs-target="${resLocals.assessment.type === 'Exam'
-                                    ? '#examResetNotSupportedModal'
-                                    : '#resetQuestionVariantsModal'}"
-                                  data-instance-question-id="${instance_question.id}"
-                                >
-                                  Reset question variants
-                                </button>
-                              `
-                            : html`
-                                <button class="dropdown-item disabled" disabled>
-                                  Must have editor permission
-                                </button>
-                              `}
+              ${run(() => {
+                let previousZoneHadInfo = false;
+
+                return instance_questions.map((instance_question) => {
+                  const zoneHasInfo =
+                    instance_question.zone_title != null ||
+                    instance_question.zone_has_max_points ||
+                    instance_question.zone_has_best_questions;
+
+                  // Show zone info if this zone has info, or if the previous zone
+                  // had info (blank zone info to visually separate).
+                  const showZoneInfo =
+                    instance_question.start_new_zone && (zoneHasInfo || previousZoneHadInfo);
+
+                  if (instance_question.start_new_zone) {
+                    previousZoneHadInfo = zoneHasInfo;
+                  }
+
+                  return html`
+                    ${instance_question.start_new_zone && instance_question.lockpoint
+                      ? html`
+                          <tr>
+                            <th colspan="9" class="bg-light fw-normal">
+                              ${instance_question.lockpoint_crossed
+                                ? html`
+                                    Lockpoint crossed by
+                                    ${instance_question.lockpoint_crossed_authn_user_uid ??
+                                    'unknown user'}
+                                    ${instance_question.lockpoint_crossed_at
+                                      ? html`at
+                                        ${formatDate(
+                                          instance_question.lockpoint_crossed_at,
+                                          resLocals.course_instance.display_timezone,
+                                        )}`
+                                      : ''}
+                                  `
+                                : html`Lockpoint not yet crossed`}
+                            </th>
+                          </tr>
+                        `
+                      : ''}
+                    ${showZoneInfo
+                      ? html`
+                          <tr>
+                            <th colspan="9">
+                              ${zoneHasInfo
+                                ? (() => {
+                                    const constraints = [
+                                      instance_question.zone_has_max_points
+                                        ? `maximum ${instance_question.zone_max_points} points`
+                                        : null,
+                                      instance_question.zone_has_best_questions
+                                        ? `best ${instance_question.zone_best_questions} questions`
+                                        : null,
+                                    ].filter(Boolean);
+
+                                    if (instance_question.zone_title) {
+                                      // Title with optional constraints in parentheses
+                                      return constraints.length > 0
+                                        ? `${instance_question.zone_title} (${constraints.join(', ')})`
+                                        : instance_question.zone_title;
+                                    } else {
+                                      // No title - capitalize the first constraint
+                                      const text = constraints.join(', ');
+                                      return text.charAt(0).toUpperCase() + text.slice(1);
+                                    }
+                                  })()
+                                : html`&nbsp;`}
+                            </th>
+                          </tr>
+                        `
+                      : ''}
+                    <tr>
+                      <td>
+                        S-${instance_question.question_number}. (<a
+                          href="/pl/course_instance/${resLocals.course_instance
+                            .id}/instance_question/${instance_question.id}/"
+                          >student view</a
+                        >)
+                      </td>
+                      <td>
+                        I-${instance_question.instructor_question_number}. ${instance_question.qid}
+                        ${resLocals.authz_data.has_course_permission_preview
+                          ? html`
+                              (<a
+                                href="${resLocals.urlPrefix}/question/${instance_question.question_id}/"
+                                >instructor view</a
+                              >)
+                            `
+                          : ''}
+                      </td>
+                      <td class="text-center">
+                        ${InstanceQuestionPoints({
+                          instance_question,
+                          assessment_question: instance_question.assessment_question,
+                          component: 'auto',
+                        })}
+                        ${resLocals.authz_data.has_course_instance_permission_edit
+                          ? EditQuestionPointsScoreButtonHtml({
+                              field: 'auto_points',
+                              instance_question,
+                              assessment_question: instance_question.assessment_question,
+                              urlPrefix: resLocals.urlPrefix,
+                              csrfToken: resLocals.__csrf_token,
+                            })
+                          : ''}
+                      </td>
+                      <td class="text-center">
+                        ${InstanceQuestionPoints({
+                          instance_question,
+                          assessment_question: instance_question.assessment_question,
+                          component: 'manual',
+                        })}
+                        ${resLocals.authz_data.has_course_instance_permission_edit
+                          ? EditQuestionPointsScoreButtonHtml({
+                              field: 'manual_points',
+                              instance_question,
+                              assessment_question: instance_question.assessment_question,
+                              urlPrefix: resLocals.urlPrefix,
+                              csrfToken: resLocals.__csrf_token,
+                            })
+                          : ''}
+                      </td>
+                      <td class="text-center">
+                        ${InstanceQuestionPoints({
+                          instance_question,
+                          assessment_question: instance_question.assessment_question,
+                          component: 'total',
+                        })}
+                        ${resLocals.authz_data.has_course_instance_permission_edit
+                          ? EditQuestionPointsScoreButtonHtml({
+                              field: 'points',
+                              instance_question,
+                              assessment_question: instance_question.assessment_question,
+                              urlPrefix: resLocals.urlPrefix,
+                              csrfToken: resLocals.__csrf_token,
+                            })
+                          : ''}
+                      </td>
+                      <td class="text-center text-nowrap" style="padding-top: 0.65rem;">
+                        ${ScorebarHtml(instance_question.score_perc)}
+                      </td>
+                      <td style="width: 1em;">
+                        ${resLocals.authz_data.has_course_instance_permission_edit
+                          ? EditQuestionPointsScoreButtonHtml({
+                              field: 'score_perc',
+                              instance_question,
+                              assessment_question: instance_question.assessment_question,
+                              urlPrefix: resLocals.urlPrefix,
+                              csrfToken: resLocals.__csrf_token,
+                            })
+                          : ''}
+                      </td>
+                      <td class="text-nowrap" style="width: 1em;">
+                        ${resLocals.authz_data.has_course_instance_permission_edit &&
+                        instance_question.status !== 'unanswered'
+                          ? html`
+                              <a
+                                class="btn btn-xs btn-secondary"
+                                href="${resLocals.urlPrefix}/assessment/${resLocals.assessment
+                                  .id}/manual_grading/instance_question/${instance_question.id}"
+                                >Manual grading</a
+                              >
+                            `
+                          : ''}
+                      </td>
+                      <td class="text-end">
+                        <div class="dropdown js-question-actions">
+                          <button
+                            type="button"
+                            class="btn btn-secondary btn-xs dropdown-toggle"
+                            data-bs-toggle="dropdown"
+                            aria-haspopup="true"
+                            aria-expanded="false"
+                          >
+                            Action <span class="caret"></span>
+                          </button>
+                          <div class="dropdown-menu dropdown-menu-end">
+                            ${resLocals.authz_data.has_course_instance_permission_edit
+                              ? html`
+                                  <button
+                                    class="dropdown-item"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="${resLocals.assessment.type === 'Exam'
+                                      ? '#examResetNotSupportedModal'
+                                      : '#resetQuestionVariantsModal'}"
+                                    data-instance-question-id="${instance_question.id}"
+                                  >
+                                    Reset question variants
+                                  </button>
+                                `
+                              : html`
+                                  <button class="dropdown-item disabled" disabled>
+                                    Must have editor permission
+                                  </button>
+                                `}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                `;
+                      </td>
+                    </tr>
+                  `;
+                });
               })}
             </tbody>
           </table>
@@ -483,8 +544,8 @@ export function InstructorAssessmentInstance({
         <div class="card-header bg-primary text-white">
           <h2>
             ${resLocals.assessment_instance_label} Statistics:
-            ${resLocals.instance_team
-              ? html`${resLocals.instance_team.name} <i class="fas fa-users"></i>`
+            ${resLocals.instance_group
+              ? html`${resLocals.instance_group.name} <i class="fas fa-users"></i>`
               : html`${resLocals.instance_user.name} (${resLocals.instance_user.uid})`}
           </h2>
         </div>
@@ -549,8 +610,8 @@ export function InstructorAssessmentInstance({
         <div class="card-header bg-primary text-white">
           <h2>
             ${resLocals.assessment_instance_label} Log:
-            ${resLocals.instance_team
-              ? html`${resLocals.instance_team.name} <i class="fas fa-users"></i>`
+            ${resLocals.instance_group
+              ? html`${resLocals.instance_group.name} <i class="fas fa-users"></i>`
               : html`${resLocals.instance_user.name} (${resLocals.instance_user.uid})`}
           </h2>
         </div>

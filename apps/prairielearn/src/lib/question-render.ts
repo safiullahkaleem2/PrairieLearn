@@ -21,6 +21,7 @@ import {
   type SubmissionForRender,
   SubmissionPanel,
 } from '../components/SubmissionPanel.js';
+import { computeNextAllowedGradingTimeMs } from '../models/instance-question.js';
 import { selectAndAuthzVariant, selectVariantsByInstanceQuestion } from '../models/variant.js';
 import * as questionServers from '../question-servers/index.js';
 
@@ -38,16 +39,24 @@ import {
   type CourseInstance,
   CourseInstanceSchema,
   CourseSchema,
+  type EnumQuestionAccessMode,
+  EnumQuestionAccessModeSchema,
   GradingJobSchema,
+  type GroupConfig,
+  GroupConfigSchema,
   type InstanceQuestion,
   type Question,
   type Submission,
   SubmissionSchema,
-  type TeamConfig,
-  TeamConfigSchema,
   type User,
   type Variant,
 } from './db-types.js';
+import {
+  type QuestionGroupPermissions,
+  getGroupInfo,
+  getQuestionGroupPermissions,
+  getUserRoles,
+} from './groups.js';
 import { writeCourseIssues } from './issues.js';
 import * as manualGrading from './manualGrading.js';
 import { selectRubricData } from './manualGrading.js';
@@ -60,28 +69,17 @@ import {
 } from './question-render.types.js';
 import { ensureVariant, getQuestionCourse } from './question-variant.js';
 import type { UntypedResLocals } from './res-locals.types.js';
-import {
-  type QuestionTeamPermissions,
-  getQuestionTeamPermissions,
-  getTeamInfo,
-  getUserRoles,
-} from './teams.js';
 
 const sql = sqldb.loadSqlEquiv(import.meta.url);
-
-type InstanceQuestionWithAllowGrade = InstanceQuestion & {
-  allow_grade_left_ms: number;
-  allow_grade_date: Date | null;
-  allow_grade_interval: string;
-};
 
 const SubmissionInfoSchema = z.object({
   grading_job: GradingJobSchema.nullable(),
   submission: SubmissionSchema,
   question_number: z.string().nullable(),
+  question_access_mode: EnumQuestionAccessModeSchema.nullable(),
   next_instance_question: z.object({
     id: IdSchema.nullable(),
-    sequence_locked: z.boolean().nullable(),
+    question_access_mode: EnumQuestionAccessModeSchema.nullable(),
   }),
   assessment_question: AssessmentQuestionSchema.nullable(),
   assessment_instance: AssessmentInstanceSchema.nullable(),
@@ -94,7 +92,7 @@ const SubmissionInfoSchema = z.object({
   user_uid: z.string().nullable(),
   submission_index: z.coerce.number(),
   submission_count: z.coerce.number(),
-  team_config: TeamConfigSchema.nullable(),
+  group_config: GroupConfigSchema.nullable(),
 });
 
 /**
@@ -106,36 +104,46 @@ const MAX_RECENT_SUBMISSIONS = 3;
 /**
  * Renders the HTML for a variant.
  *
- * @param variant_course The course for the variant.
- * @param renderSelection Specify which panels should be rendered.
- * @param variant The variant to submit to.
- * @param question The question for the variant.
- * @param submission The current submission to the variant.
- * @param submissions The full list of submissions to the variant.
- * @param question_course The course for the question.
- * @param locals The current locals for the page response.
+ * @param params
+ * @param params.variant_course The course for the variant.
+ * @param params.renderSelection Specify which panels should be rendered.
+ * @param params.variant The variant to submit to.
+ * @param params.question The question for the variant.
+ * @param params.submission The current submission to the variant.
+ * @param params.submissions The full list of submissions to the variant.
+ * @param params.question_course The course for the question.
+ * @param params.locals The current locals for the page response.
  */
-async function render(
-  variant_course: Course,
-  renderSelection: questionServers.RenderSelection,
-  variant: Variant,
-  question: Question,
-  submission: Submission | null,
-  submissions: Submission[],
-  question_course: Course,
-  locals: UntypedResLocals,
-): Promise<questionServers.RenderResultData> {
+async function render({
+  variant_course,
+  renderSelection,
+  variant,
+  question,
+  submission,
+  submissions,
+  question_course,
+  locals,
+}: {
+  variant_course: Course;
+  renderSelection: questionServers.RenderSelection;
+  variant: Variant;
+  question: Question;
+  submission: Submission | null;
+  submissions: Submission[];
+  question_course: Course;
+  locals: UntypedResLocals;
+}): Promise<questionServers.RenderResultData> {
   const questionModule = questionServers.getModule(question.type);
 
-  const { courseIssues, data } = await questionModule.render(
+  const { courseIssues, data } = await questionModule.render({
     renderSelection,
     variant,
     question,
     submission,
     submissions,
-    question_course,
+    course: question_course,
     locals,
-  );
+  });
 
   const studentMessage = 'Error rendering question';
   const courseData = { variant, question, submission, course: variant_course };
@@ -233,7 +241,7 @@ export function buildQuestionUrls(
   return urls;
 }
 
-export interface ResLocalsBuildLocals {
+interface ResLocalsBuildLocals {
   showGradeButton: boolean;
   showSaveButton: boolean;
   disableGradeButton: boolean;
@@ -255,25 +263,29 @@ function buildLocals({
   variant,
   question,
   instance_question,
-  team_role_permissions,
+  group_role_permissions,
   assessment,
   assessment_instance,
   assessment_question,
-  team_config,
+  group_config,
+  allowGradeLeftMs,
   authz_result,
+  question_access_mode,
 }: {
   variant: Variant;
   question: Question;
-  instance_question?: InstanceQuestionWithAllowGrade | null;
-  team_role_permissions?: {
+  instance_question?: InstanceQuestion | null;
+  group_role_permissions?: {
     can_view: boolean;
     can_submit: boolean;
   } | null;
   assessment?: Assessment | null;
   assessment_instance?: AssessmentInstance | null;
   assessment_question?: AssessmentQuestion | null;
-  team_config?: TeamConfig | null;
+  group_config?: GroupConfig | null;
+  allowGradeLeftMs: number;
   authz_result?: any;
+  question_access_mode?: EnumQuestionAccessMode | null;
 }) {
   const locals: ResLocalsBuildLocals = {
     showGradeButton: false,
@@ -334,9 +346,15 @@ function buildLocals({
     if (assessment_question.allow_real_time_grading === false) {
       locals.showGradeButton = false;
     }
-    if (instance_question.allow_grade_left_ms > 0) {
+    if (allowGradeLeftMs > 0) {
       locals.disableGradeButton = true;
     }
+  }
+
+  if (question_access_mode === 'read_only_lockpoint') {
+    locals.showGradeButton = false;
+    locals.showSaveButton = false;
+    locals.allowAnswerEditing = false;
   }
 
   if (
@@ -385,7 +403,7 @@ function buildLocals({
     locals.showTrueAnswer = false;
   }
 
-  if (team_config?.has_roles && !team_role_permissions?.can_submit) {
+  if (group_config?.has_roles && !group_role_permissions?.can_submit) {
     locals.disableGradeButton = true;
     locals.disableSaveButton = true;
   }
@@ -415,9 +433,10 @@ export async function getAndRenderVariant(
     assessment?: Assessment;
     assessment_instance?: AssessmentInstance;
     assessment_question?: AssessmentQuestion;
-    team_config?: TeamConfig;
-    team_role_permissions?: QuestionTeamPermissions;
-    instance_question?: InstanceQuestionWithAllowGrade;
+    group_config?: GroupConfig;
+    group_role_permissions?: QuestionGroupPermissions;
+    instance_question?: InstanceQuestion;
+    instance_question_info?: { question_access_mode?: EnumQuestionAccessMode | null };
     authz_data?: Record<string, any>;
     authz_result?: Record<string, any>;
     client_fingerprint_id?: string | null;
@@ -469,18 +488,18 @@ export async function getAndRenderVariant(
       const require_open = !!locals.assessment && locals.assessment.type !== 'Exam';
       const instance_question_id = locals.instance_question?.id ?? null;
       const options = { variant_seed };
-      return await ensureVariant(
-        locals.question.id,
+      return await ensureVariant({
+        question_id: locals.question.id,
         instance_question_id,
-        locals.user.id,
-        locals.authn_user.id,
-        locals.course_instance ?? null,
-        locals.course,
+        user_id: locals.user.id,
+        authn_user_id: locals.authn_user.id,
+        course_instance: locals.course_instance ?? null,
+        variant_course: locals.course,
         question_course,
         options,
         require_open,
-        locals.client_fingerprint_id ?? null,
-      );
+        client_fingerprint_id: locals.client_fingerprint_id ?? null,
+      });
     }
   });
 
@@ -495,8 +514,8 @@ export async function getAndRenderVariant(
     assessment,
     assessment_instance,
     assessment_question,
-    team_config,
-    team_role_permissions,
+    group_config,
+    group_role_permissions,
     authz_result,
   } = locals;
 
@@ -510,16 +529,24 @@ export async function getAndRenderVariant(
   Object.assign(urls, urlOverrides);
   Object.assign(locals, urls);
 
+  const allowGradeLeftMs =
+    instance_question != null && assessment_question?.grade_rate_minutes
+      ? await computeNextAllowedGradingTimeMs({ instanceQuestionId: instance_question.id })
+      : 0;
+  locals.allowGradeLeftMs = allowGradeLeftMs;
+
   const newLocals = buildLocals({
     variant,
     question,
     instance_question,
-    team_role_permissions,
+    group_role_permissions,
     assessment,
     assessment_instance,
     assessment_question,
-    team_config,
+    allowGradeLeftMs,
+    group_config,
     authz_result,
+    question_access_mode: locals.instance_question_info?.question_access_mode,
   });
   if (
     (locals.questionRenderContext === 'manual_grading' ||
@@ -588,16 +615,16 @@ export async function getAndRenderVariant(
     submissions: submissions.length > 0,
     answer: locals.showTrueAnswer ?? false,
   };
-  const htmls = await render(
-    course,
+  const htmls = await render({
+    variant_course: course,
     renderSelection,
     variant,
     question,
-    submission as Submission,
-    submissions.slice(0, MAX_RECENT_SUBMISSIONS) as Submission[],
+    submission: submission as Submission,
+    submissions: submissions.slice(0, MAX_RECENT_SUBMISSIONS) as Submission[],
     question_course,
     locals,
-  );
+  });
   locals.extraHeadersHtml = htmls.extraHeadersHtml;
   locals.questionHtml = htmls.questionHtml;
   locals.submissionHtmls = htmls.submissionHtmls;
@@ -660,11 +687,12 @@ export async function renderPanelsForSubmission({
   questionRenderContext,
   authorizedEdit,
   renderScorePanels,
-  teamRolePermissions,
+  groupRolePermissions,
+  authz_result,
 }: {
   unsafe_submission_id: string;
   question: Question;
-  instance_question: InstanceQuestionWithAllowGrade | null;
+  instance_question: InstanceQuestion | null;
   variant: Variant;
   user: User;
   urlPrefix: string;
@@ -672,7 +700,8 @@ export async function renderPanelsForSubmission({
   questionRenderContext?: QuestionRenderContext;
   authorizedEdit: boolean;
   renderScorePanels: boolean;
-  teamRolePermissions: { can_view: boolean; can_submit: boolean } | null;
+  groupRolePermissions: { can_view: boolean; can_submit: boolean } | null;
+  authz_result?: { active: boolean };
 }): Promise<SubmissionPanels> {
   const submissionInfo = await sqldb.queryOptionalRow(
     sql.select_submission_info,
@@ -702,7 +731,8 @@ export async function renderPanelsForSubmission({
     formatted_date,
     user_uid,
     question_number,
-    team_config,
+    group_config,
+    question_access_mode,
   } = submissionInfo;
   const previous_variants =
     variant.instance_question_id == null || assessment_instance == null
@@ -711,6 +741,10 @@ export async function renderPanelsForSubmission({
           assessment_instance_id: assessment_instance.id,
           instance_question_id: variant.instance_question_id,
         });
+  const allowGradeLeftMs =
+    instance_question != null && assessment_question?.grade_rate_minutes
+      ? await computeNextAllowedGradingTimeMs({ instanceQuestionId: instance_question.id })
+      : 0;
 
   const panels: SubmissionPanels = {
     submissionPanel: null,
@@ -725,11 +759,14 @@ export async function renderPanelsForSubmission({
       variant,
       question,
       instance_question,
-      team_role_permissions: teamRolePermissions,
+      group_role_permissions: groupRolePermissions,
       assessment,
       assessment_instance,
       assessment_question,
-      team_config,
+      allowGradeLeftMs,
+      group_config,
+      authz_result,
+      question_access_mode,
     }),
   };
 
@@ -738,16 +775,20 @@ export async function renderPanelsForSubmission({
       // Render the submission panel
       const submissions = [submission];
 
-      const htmls = await render(
+      const htmls = await render({
         variant_course,
-        { answer: renderScorePanels && locals.showTrueAnswer, submissions: true, question: false },
+        renderSelection: {
+          answer: renderScorePanels && locals.showTrueAnswer,
+          submissions: true,
+          question: false,
+        },
         variant,
         question,
         submission,
         submissions,
         question_course,
         locals,
-      );
+      });
 
       panels.answerPanel = locals.showTrueAnswer ? htmls.answerHtml : null;
       panels.extraHeadersHtml = htmls.extraHeadersHtml;
@@ -804,6 +845,7 @@ export async function renderPanelsForSubmission({
         variant,
         urlPrefix,
         instance_question_info: { question_number, previous_variants },
+        allowGradeLeftMs,
       }).toString();
     },
     async () => {
@@ -824,10 +866,10 @@ export async function renderPanelsForSubmission({
       // Render the question panel footer
       if (!renderScorePanels) return;
 
-      const team_info = await run(async () => {
-        if (!assessment_instance?.team_id || !team_config) return null;
+      const group_info = await run(async () => {
+        if (!assessment_instance?.team_id || !group_config) return null;
 
-        return await getTeamInfo(assessment_instance.team_id, team_config);
+        return await getGroupInfo(assessment_instance.team_id, group_config);
       });
 
       panels.questionPanelFooter = QuestionFooterContent({
@@ -838,10 +880,11 @@ export async function renderPanelsForSubmission({
           instance_question,
           authz_result: { authorized_edit: authorizedEdit },
           instance_question_info: { previous_variants },
-          team_config,
-          team_info,
-          team_role_permissions: teamRolePermissions,
+          group_config,
+          group_info,
+          group_role_permissions: groupRolePermissions,
           user,
+          allowGradeLeftMs,
           ...locals,
         },
         questionContext,
@@ -855,16 +898,16 @@ export async function renderPanelsForSubmission({
       // is disabled, so it does not need to be replaced.
       if (variant.instance_question_id == null || next_instance_question.id == null) return;
 
-      let nextQuestionTeamRolePermissions: { can_view: boolean } | null = null;
-      let userTeamRoles = 'None';
+      let nextQuestionGroupRolePermissions: { can_view: boolean } | null = null;
+      let userGroupRoles = 'None';
 
-      if (assessment_instance?.team_id && team_config?.has_roles) {
-        nextQuestionTeamRolePermissions = await getQuestionTeamPermissions(
+      if (assessment_instance?.team_id && group_config?.has_roles) {
+        nextQuestionGroupRolePermissions = await getQuestionGroupPermissions(
           next_instance_question.id,
           assessment_instance.team_id,
           user.id,
         );
-        userTeamRoles =
+        userGroupRoles =
           (await getUserRoles(assessment_instance.team_id, user.id))
             .map((role) => role.role_name)
             .join(', ') || 'None';
@@ -872,12 +915,12 @@ export async function renderPanelsForSubmission({
 
       panels.questionNavNextButton = QuestionNavSideButton({
         instanceQuestionId: next_instance_question.id,
-        sequenceLocked: next_instance_question.sequence_locked,
+        nextQuestionAccessMode: next_instance_question.question_access_mode,
         urlPrefix,
         whichButton: 'next',
-        teamRolePermissions: nextQuestionTeamRolePermissions,
+        groupRolePermissions: nextQuestionGroupRolePermissions,
         advanceScorePerc: assessment_question?.advance_score_perc,
-        userTeamRoles,
+        userGroupRoles,
       }).toString();
     },
   ]);

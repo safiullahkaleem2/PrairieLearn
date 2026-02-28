@@ -24,6 +24,7 @@ async function setLocals(req: Request, res: Response) {
   res.locals.question = await selectQuestionById(req.params.question_id);
 
   if (
+    res.locals.question.deleted_at != null ||
     !(res.locals.question.share_publicly || res.locals.question.share_source_publicly) ||
     res.locals.course.id !== res.locals.question.course_id
   ) {
@@ -86,8 +87,8 @@ router.get(
       authorizedEdit: false,
       // Score panels are never rendered on the public question preview page.
       renderScorePanels: false,
-      // Team role permissions are not used in this context.
-      teamRolePermissions: null,
+      // Group role permissions are not used in this context.
+      groupRolePermissions: null,
     });
     res.json(panels);
   }),

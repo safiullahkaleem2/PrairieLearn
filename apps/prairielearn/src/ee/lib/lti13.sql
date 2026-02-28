@@ -1,14 +1,3 @@
--- BLOCK select_ci_validation
-SELECT
-  EXISTS (
-    SELECT
-      1
-    FROM
-      lti13_course_instances
-    WHERE
-      course_instance_id = $course_instance_id
-  );
-
 -- BLOCK update_token
 UPDATE lti13_instances
 SET
@@ -98,7 +87,7 @@ WHERE
 WITH
   course_assessment_instances AS (
     SELECT
-      COALESCE(ai.user_id, tu.user_id) AS user_id,
+      COALESCE(ai.user_id, gu.user_id) AS user_id,
       ai.id,
       ai.assessment_id,
       ai.score_perc,
@@ -107,11 +96,11 @@ WITH
     FROM
       assessment_instances AS ai
       JOIN assessments AS a ON (a.id = ai.assessment_id)
-      LEFT JOIN teams AS t ON (t.id = ai.team_id)
-      LEFT JOIN team_users AS tu ON (tu.team_id = t.id)
+      LEFT JOIN teams AS g ON (g.id = ai.team_id)
+      LEFT JOIN team_users AS gu ON (gu.team_id = g.id)
     WHERE
       ai.assessment_id = $assessment_id
-      AND t.deleted_at IS NULL
+      AND g.deleted_at IS NULL
       AND ai.score_perc IS NOT NULL
       AND ai.date IS NOT NULL
   )
