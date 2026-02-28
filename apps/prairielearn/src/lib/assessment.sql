@@ -832,6 +832,7 @@ WITH
       requires_manual_grading = FALSE
     WHERE
       iq.assessment_instance_id = $assessment_instance_id
+      AND iq.requires_manual_grading = TRUE
   ),
   updated_assessment_instances AS (
     UPDATE assessment_instances AS ai

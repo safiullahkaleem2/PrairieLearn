@@ -181,6 +181,26 @@ async function loadInstances(assessmentQuestionUrl: string) {
   return await client.instances.query();
 }
 
+async function assertScorePercPending(assessment_instance_id: string, iqId: string | number) {
+  await updateAssessmentInstanceGrade({
+    assessment_instance_id,
+    authn_user_id: '1',
+    credit: 100,
+    allowDecrease: true,
+  });
+  const assessmentInstance = await sqldb.queryRow(
+    sql.get_assessment_instance_for_iq,
+    { iqId },
+    AssessmentInstanceSchema,
+  );
+  const expected_score_perc_pending = await sqldb.queryRow(
+    sql.get_expected_score_perc_pending_for_iq,
+    { iqId },
+    ExpectedScorePercPendingSchema,
+  );
+  assert.closeTo(assessmentInstance.score_perc_pending, expected_score_perc_pending, 0.0001);
+}
+
 function checkGradingResults(assigned_grader: MockUser, grader: MockUser): void {
   test.sequential('manual grading page for instance question lists updated values', async () => {
     setUser(defaultUser);
@@ -505,27 +525,7 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       test.sequential(
         'score_perc_pending should be 0 before manual grading is requested',
         async () => {
-          await updateAssessmentInstanceGrade({
-            assessment_instance_id,
-            authn_user_id: '1',
-            credit: 100,
-            allowDecrease: true,
-          });
-          const assessmentInstance = await sqldb.queryRow(
-            sql.get_assessment_instance_for_iq,
-            { iqId },
-            AssessmentInstanceSchema,
-          );
-          const expected_score_perc_pending = await sqldb.queryRow(
-            sql.get_expected_score_perc_pending_for_iq,
-            { iqId },
-            ExpectedScorePercPendingSchema,
-          );
-          assert.closeTo(
-            assessmentInstance.score_perc_pending,
-            expected_score_perc_pending,
-            0.0001,
-          );
+          await assertScorePercPending(assessment_instance_id, iqId);
         },
       );
 
@@ -555,27 +555,7 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       test.sequential(
         'score_perc_pending should reflect a newly pending manual question after submission',
         async () => {
-          await updateAssessmentInstanceGrade({
-            assessment_instance_id,
-            authn_user_id: '1',
-            credit: 100,
-            allowDecrease: true,
-          });
-          const assessmentInstance = await sqldb.queryRow(
-            sql.get_assessment_instance_for_iq,
-            { iqId },
-            AssessmentInstanceSchema,
-          );
-          const expected_score_perc_pending = await sqldb.queryRow(
-            sql.get_expected_score_perc_pending_for_iq,
-            { iqId },
-            ExpectedScorePercPendingSchema,
-          );
-          assert.closeTo(
-            assessmentInstance.score_perc_pending,
-            expected_score_perc_pending,
-            0.0001,
-          );
+          await assertScorePercPending(assessment_instance_id, iqId);
         },
       );
     });
@@ -806,27 +786,7 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       test.sequential(
         'score_perc_pending should drop after manual grading is completed',
         async () => {
-          await updateAssessmentInstanceGrade({
-            assessment_instance_id,
-            authn_user_id: '1',
-            credit: 100,
-            allowDecrease: true,
-          });
-          const assessmentInstance = await sqldb.queryRow(
-            sql.get_assessment_instance_for_iq,
-            { iqId },
-            AssessmentInstanceSchema,
-          );
-          const expected_score_perc_pending = await sqldb.queryRow(
-            sql.get_expected_score_perc_pending_for_iq,
-            { iqId },
-            ExpectedScorePercPendingSchema,
-          );
-          assert.closeTo(
-            assessmentInstance.score_perc_pending,
-            expected_score_perc_pending,
-            0.0001,
-          );
+          await assertScorePercPending(assessment_instance_id, iqId);
         },
       );
 

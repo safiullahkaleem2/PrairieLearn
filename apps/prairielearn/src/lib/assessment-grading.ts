@@ -25,14 +25,8 @@ type AssessmentInstanceZonePoints = z.infer<typeof AssessmentInstanceZonePointsS
 
 export async function updateAssessmentInstancesScorePercPending(
   assessment_instance_ids: string[],
-  context?: {
-    source: string;
-    action?: string;
-    metadata?: Record<string, unknown>;
-  },
 ): Promise<void> {
   if (assessment_instance_ids.length === 0) return;
-  void context;
 
   await execute(sql.update_assessment_instances_score_perc_pending, {
     assessment_instance_ids,

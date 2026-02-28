@@ -411,7 +411,7 @@ WITH
       iq.assessment_instance_id
   )
 SELECT
-  uiq.assessment_instance_id
+  DISTINCT uiq.assessment_instance_id
 FROM
   updated_instance_questions AS uiq;
 
