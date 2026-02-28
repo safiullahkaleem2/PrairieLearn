@@ -7,7 +7,6 @@ import z from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
 
-import { updateAssessmentInstanceGrade } from '../lib/assessment-grading.js';
 import { b64EncodeUnicode } from '../lib/base64-util.js';
 import { config } from '../lib/config.js';
 import { AssessmentInstanceSchema, InstanceQuestionSchema } from '../lib/db-types.js';
@@ -116,7 +115,6 @@ let score_percent: number, score_points: number, adjust_points: number | null;
 let feedback_note: string;
 let rubric_items: RubricItem[] | undefined;
 let selected_rubric_items: number[] | undefined;
-let assessment_instance_id: string;
 
 async function submitGradeForm(
   method: 'rubric' | 'points' | 'percentage' = 'rubric',
@@ -181,13 +179,7 @@ async function loadInstances(assessmentQuestionUrl: string) {
   return await client.instances.query();
 }
 
-async function assertScorePercPending(assessment_instance_id: string, iqId: string | number) {
-  await updateAssessmentInstanceGrade({
-    assessment_instance_id,
-    authn_user_id: '1',
-    credit: 100,
-    allowDecrease: true,
-  });
+async function assertScorePercPending(iqId: string | number) {
   const assessmentInstance = await sqldb.queryRow(
     sql.get_assessment_instance_for_iq,
     { iqId },
@@ -518,14 +510,13 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
           { iqId },
           InstanceQuestionSchema,
         );
-        assessment_instance_id = instanceQuestion.assessment_instance_id;
         assert.equal(instanceQuestion.requires_manual_grading, false);
       });
 
       test.sequential(
         'score_perc_pending should be 0 before manual grading is requested',
         async () => {
-          await assertScorePercPending(assessment_instance_id, iqId);
+          await assertScorePercPending(iqId);
         },
       );
 
@@ -555,7 +546,7 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       test.sequential(
         'score_perc_pending should reflect a newly pending manual question after submission',
         async () => {
-          await assertScorePercPending(assessment_instance_id, iqId);
+          await assertScorePercPending(iqId);
         },
       );
     });
@@ -786,7 +777,7 @@ describe('Manual Grading', { timeout: 80_000 }, function () {
       test.sequential(
         'score_perc_pending should drop after manual grading is completed',
         async () => {
-          await assertScorePercPending(assessment_instance_id, iqId);
+          await assertScorePercPending(iqId);
         },
       );
 
