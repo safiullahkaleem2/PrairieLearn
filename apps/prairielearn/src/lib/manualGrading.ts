@@ -13,7 +13,10 @@ import { IdSchema } from '@prairielearn/zod';
 import type { SubmissionForRender } from '../components/SubmissionPanel.js';
 import { selectInstanceQuestionGroups } from '../ee/lib/ai-instance-question-grouping/ai-instance-question-grouping-util.js';
 
-import { updateAssessmentInstanceGrade } from './assessment-grading.js';
+import {
+  updateAssessmentInstanceGrade,
+  updateAssessmentInstancesScorePercPending,
+} from './assessment-grading.js';
 import {
   type Assessment,
   type AssessmentQuestion,
@@ -370,7 +373,12 @@ export async function updateAssessmentQuestionRubric({
     }
 
     if (tag_for_manual_grading) {
-      await sqldb.execute(sql.tag_for_manual_grading, { assessment_question_id });
+      const assessment_instance_ids = await sqldb.queryRows(
+        sql.tag_for_manual_grading,
+        { assessment_question_id },
+        IdSchema,
+      );
+      await updateAssessmentInstancesScorePercPending(Array.from(new Set(assessment_instance_ids)));
     }
   });
 }

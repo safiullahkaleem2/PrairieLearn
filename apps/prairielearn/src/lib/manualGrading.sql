@@ -371,11 +371,49 @@ FOR NO KEY UPDATE OF
   iq;
 
 -- BLOCK tag_for_manual_grading
-UPDATE instance_questions iq
-SET
-  requires_manual_grading = TRUE
-WHERE
-  iq.assessment_question_id = $assessment_question_id;
+WITH
+  locked_assessment_instances AS (
+    SELECT
+      ai.id
+    FROM
+      assessment_instances AS ai
+    WHERE
+      ai.id IN (
+        SELECT DISTINCT
+          iq.assessment_instance_id
+        FROM
+          instance_questions AS iq
+        WHERE
+          iq.assessment_question_id = $assessment_question_id
+          AND iq.requires_manual_grading IS DISTINCT FROM TRUE
+      )
+    ORDER BY
+      ai.id
+    FOR NO KEY UPDATE OF
+      ai
+  ),
+  updated_instance_questions AS (
+    UPDATE instance_questions AS iq
+    SET
+      requires_manual_grading = TRUE
+    WHERE
+      iq.assessment_question_id = $assessment_question_id
+      AND iq.requires_manual_grading IS DISTINCT FROM TRUE
+      AND EXISTS (
+        SELECT
+          1
+        FROM
+          locked_assessment_instances AS lai
+        WHERE
+          lai.id = iq.assessment_instance_id
+      )
+    RETURNING
+      iq.assessment_instance_id
+  )
+SELECT
+  uiq.assessment_instance_id
+FROM
+  updated_instance_questions AS uiq;
 
 -- BLOCK insert_rubric_grading
 WITH
